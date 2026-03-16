@@ -1,0 +1,313 @@
+# ============================================================================
+# Social RPC 服务配置文件 - 中文详细注释版本
+# ============================================================================
+# 文件说明：
+#   这是 Social RPC 服务的配置文件
+#   Social RPC 提供社交关系管理的核心业务逻辑
+#   包括好友关系、群组管理等功能
+#
+# 数据存储：
+#   使用 MySQL 存储社交关系数据
+#   使用 Redis 缓存热点数据
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# 服务基本配置
+# ----------------------------------------------------------------------------
+
+# name: 服务名称
+# 作用：标识 Social RPC 服务
+name: social.rpc
+
+# listenon: RPC 服务监听地址
+# 作用：指定 gRPC 服务监听的地址和端口
+# 格式：IP:端口
+# 端口规划：
+#   - 10000: user RPC
+#   - 10001: social RPC
+#   - 10002: im RPC
+listenon: 0.0.0.0:10001
+
+# ----------------------------------------------------------------------------
+# 服务注册与发现配置
+# ----------------------------------------------------------------------------
+# etcd: Etcd 服务注册配置
+# 作用：将 RPC 服务注册到 Etcd，供其他服务发现
+etcd:
+  # hosts: Etcd 服务器地址列表
+  hosts:
+    - 192.168.117.24:3379
+
+  # key: 服务在 Etcd 中的注册键
+  # 必须与客户端配置中的 key 保持一致
+  key: social.rpc
+
+# ----------------------------------------------------------------------------
+# MySQL 数据库配置
+# ----------------------------------------------------------------------------
+# mysql: MySQL 数据库连接配置
+# 作用：存储社交关系数据
+# Social RPC 使用 MySQL 存储：
+#   - 好友关系表
+#   - 群组信息表
+#   - 群成员表
+#   - 好友申请记录表
+mysql:
+  # datasource: MySQL 连接字符串
+  # 格式：用户名:密码@tcp(主机:端口)/数据库名?参数
+  # 参数说明：
+  #   - charset=utf8mb4: 字符集（支持 emoji 等特殊字符）
+  #   - parseTime=true: 自动解析 time.Time 类型
+  # 其他可选参数：
+  #   - loc=Local: 时区设置
+  #   - timeout=10s: 连接超时时间
+  #   - readTimeout=30s: 读取超时时间
+  #   - writeTimeout=30s: 写入超时时间
+  #   - maxAllowedPacket=0: 最大数据包大小
+  datasource: root:easy-chat@tcp(192.168.117.24:13306)/easy-chat?charset=utf8mb4&parseTime=true
+
+# ----------------------------------------------------------------------------
+# Redis 缓存配置
+# ----------------------------------------------------------------------------
+# cache: Go-Zero 缓存配置
+# 作用：配置 Redis 缓存，提高查询性能
+# Go-Zero 支持多种缓存模式：
+#   - node: 单节点模式
+#   - cluster: 集群模式
+#   - sentinel: 哨兵模式
+cache:
+  # 缓存节点配置（数组格式，支持多个节点）
+  - host: 192.168.117.24:16379  # Redis 服务器地址
+    type: node                   # 缓存类型：node（单节点）
+    pass: easy-chat              # Redis 密码
+
+# ----------------------------------------------------------------------------
+# 超时配置
+# ----------------------------------------------------------------------------
+# timeout: 服务超时时间
+# 单位：毫秒
+# 作用：RPC 请求的默认超时时间
+# 配置建议：
+#   - 开发环境：1000ms (1秒)
+#   - 生产环境：根据实际情况调整（通常 500-2000ms）
+timeout: 1000
+
+# ============================================================================
+# Social RPC 服务功能说明
+# ============================================================================
+# Social RPC 提供的主要功能：
+#
+# 1. 好友关系管理：
+#    - AddFriend: 添加好友申请
+#    - AcceptFriend: 接受好友申请
+#    - RejectFriend: 拒绝好友申请
+#    - GetFriendList: 获取好友列表
+#    - DeleteFriend: 删除好友
+#    - GetFriendRequests: 获取好友申请列表
+#    - IsFriend: 判断是否为好友关系
+#
+# 2. 群组管理：
+#    - CreateGroup: 创建群组
+#    - GetGroupInfo: 获取群组信息
+#    - GetGroupList: 获取用户的群组列表
+#    - UpdateGroup: 更新群组信息
+#    - DeleteGroup: 解散群组
+#
+# 3. 群成员管理：
+#    - AddGroupMember: 添加群成员
+#    - RemoveGroupMember: 移除群成员
+#    - GetGroupMembers: 获取群成员列表
+#    - SetMemberRole: 设置群成员角色
+#    - IsMember: 判断是否为群成员
+#
+# ============================================================================
+# 数据库表结构设计
+# ============================================================================
+# 1. friends 表（好友关系表）：
+#    CREATE TABLE friends (
+#      id BIGINT PRIMARY KEY AUTO_INCREMENT,
+#      user_id VARCHAR(64) NOT NULL COMMENT '用户ID',
+#      friend_id VARCHAR(64) NOT NULL COMMENT '好友ID',
+#      remark VARCHAR(255) COMMENT '备注名',
+#      status TINYINT DEFAULT 1 COMMENT '状态：1正常 2已删除',
+#      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+#      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+#      UNIQUE KEY uk_user_friend (user_id, friend_id),
+#      KEY idx_user_id (user_id),
+#      KEY idx_friend_id (friend_id)
+#    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='好友关系表';
+#
+# 2. friend_requests 表（好友申请表）：
+#    CREATE TABLE friend_requests (
+#      id BIGINT PRIMARY KEY AUTO_INCREMENT,
+#      from_user_id VARCHAR(64) NOT NULL COMMENT '申请人ID',
+#      to_user_id VARCHAR(64) NOT NULL COMMENT '接收人ID',
+#      message VARCHAR(500) COMMENT '申请消息',
+#      status TINYINT DEFAULT 0 COMMENT '状态：0待处理 1已同意 2已拒绝',
+#      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+#      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+#      KEY idx_to_user (to_user_id, status),
+#      KEY idx_from_user (from_user_id)
+#    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='好友申请表';
+#
+# 3. groups 表（群组表）：
+#    CREATE TABLE groups (
+#      id VARCHAR(64) PRIMARY KEY COMMENT '群组ID',
+#      name VARCHAR(255) NOT NULL COMMENT '群名称',
+#      avatar VARCHAR(500) COMMENT '群头像',
+#      owner_id VARCHAR(64) NOT NULL COMMENT '群主ID',
+#      member_count INT DEFAULT 0 COMMENT '成员数量',
+#      max_member INT DEFAULT 500 COMMENT '最大成员数',
+#      status TINYINT DEFAULT 1 COMMENT '状态：1正常 2已解散',
+#      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+#      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+#      KEY idx_owner (owner_id)
+#    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='群组表';
+#
+# 4. group_members 表（群成员表）：
+#    CREATE TABLE group_members (
+#      id BIGINT PRIMARY KEY AUTO_INCREMENT,
+#      group_id VARCHAR(64) NOT NULL COMMENT '群组ID',
+#      user_id VARCHAR(64) NOT NULL COMMENT '用户ID',
+#      role TINYINT DEFAULT 1 COMMENT '角色：1普通成员 2管理员 3群主',
+#      nickname VARCHAR(255) COMMENT '群昵称',
+#      joined_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '加入时间',
+#      UNIQUE KEY uk_group_user (group_id, user_id),
+#      KEY idx_group_id (group_id),
+#      KEY idx_user_id (user_id)
+#    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='群成员表';
+#
+# ============================================================================
+# Go-Zero 缓存机制说明
+# ============================================================================
+# Go-Zero 提供了自动缓存功能：
+#
+# 1. 缓存策略：
+#    - 查询时先查缓存，未命中再查数据库
+#    - 查询结果自动写入缓存
+#    - 更新/删除时自动删除相关缓存
+#
+# 2. 缓存 Key 设计：
+#    - 好友列表：cache:social:friends:{user_id}
+#    - 群组信息：cache:social:group:{group_id}
+#    - 群成员列表：cache:social:group:members:{group_id}
+#
+# 3. 缓存过期时间：
+#    - 默认：随机 7-14 天
+#    - 可自定义过期时间
+#
+# 4. 缓存穿透保护：
+#    - 空结果也会缓存（防止缓存穿透）
+#    - 使用较短的过期时间（如 5 分钟）
+#
+# ============================================================================
+# 业务逻辑示例
+# ============================================================================
+# 添加好友流程：
+#
+# 1. 验证参数：
+#    - 检查用户ID是否有效
+#    - 检查是否已经是好友
+#    - 检查是否已发送过申请
+#
+# 2. 创建好友申请记录：
+#    INSERT INTO friend_requests (from_user_id, to_user_id, message, status)
+#    VALUES ('user_001', 'user_002', '你好', 0);
+#
+# 3. 发送通知：
+#    - 通过 IM RPC 发送系统消息通知对方
+#
+# 4. 返回结果
+#
+# 接受好友申请流程：
+#
+# 1. 验证申请是否存在且状态为待处理
+#
+# 2. 开启事务：
+#    BEGIN;
+#
+#    -- 更新申请状态
+#    UPDATE friend_requests SET status = 1 WHERE id = ?;
+#
+#    -- 创建双向好友关系
+#    INSERT INTO friends (user_id, friend_id) VALUES ('user_001', 'user_002');
+#    INSERT INTO friends (user_id, friend_id) VALUES ('user_002', 'user_001');
+#
+#    COMMIT;
+#
+# 3. 删除相关缓存：
+#    - 删除双方的好友列表缓存
+#
+# 4. 创建私聊会话：
+#    - 调用 IM RPC 创建会话
+#
+# 5. 发送通知：
+#    - 通知申请人好友申请已通过
+#
+# ============================================================================
+# 开发环境使用指南
+# ============================================================================
+# 1. 数据库准备：
+#    # 创建数据库
+#    CREATE DATABASE easy_chat DEFAULT CHARSET utf8mb4;
+#
+#    # 导入表结构
+#    mysql -u root -p easy_chat < schema.sql
+#
+# 2. 启动服务：
+#    cd /home/lfl/easy-chat1/apps/social/rpc
+#    go run social.go -f etc/conf/social-rpc.yaml
+#
+# 3. 验证服务：
+#    # 检查服务注册
+#    etcdctl get --prefix /social.rpc
+#
+#    # 测试 RPC 调用
+#    grpcurl -plaintext 192.168.117.24:10001 list
+#
+# ============================================================================
+# 性能优化建议
+# ============================================================================
+# 1. 数据库优化：
+#    - 为常用查询字段创建索引
+#    - 使用复合索引优化多条件查询
+#    - 定期分析和优化慢查询
+#    - 考虑分库分表（用户量大时）
+#
+# 2. 缓存优化：
+#    - 合理设置缓存过期时间
+#    - 使用缓存预热
+#    - 实现多级缓存
+#    - 监控缓存命中率
+#
+# 3. 查询优化：
+#    - 避免 SELECT *
+#    - 使用分页查询
+#    - 批量查询减少数据库访问
+#    - 使用 JOIN 代替多次查询
+#
+# 4. 并发优化：
+#    - 使用乐观锁处理并发更新
+#    - 合理使用事务
+#    - 避免长事务
+#
+# ============================================================================
+# 监控和告警
+# ============================================================================
+# 1. 关键指标：
+#    - RPC 请求量和响应时间
+#    - 数据库连接数和查询性能
+#    - 缓存命中率
+#    - 错误率
+#
+# 2. 慢查询监控：
+#    - 记录执行时间超过 100ms 的查询
+#    - 分析慢查询原因
+#    - 优化索引和查询语句
+#
+# 3. 告警设置：
+#    - 服务不可用
+#    - 响应时间过长
+#    - 数据库连接异常
+#    - 缓存异常
+# ============================================================================

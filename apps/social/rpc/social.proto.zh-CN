@@ -1,0 +1,807 @@
+# Social (社交) Proto 文件中文注释
+
+## 文件说明
+本文件定义了社交服务的 gRPC 接口和数据结构。
+主要功能包括：好友管理（添加好友、好友申请、好友列表）和群组管理（创建群、加群申请、群成员管理）。
+
+## Protocol Buffers (Protobuf) 基础知识
+
+### 什么是 Protocol Buffers？
+Protocol Buffers（简称 Protobuf）是 Google 开发的一种语言无关、平台无关的数据序列化格式。
+它比 JSON 或 XML 更高效，体积更小，解析速度更快。
+
+### 什么是 gRPC？
+gRPC 是一个现代化的 RPC（远程过程调用）框架：
+- 使用 HTTP/2 协议，支持双向流、流控制、头部压缩等特性
+- 使用 Protobuf 作为接口定义语言（IDL）
+- 支持多种编程语言
+- 自动生成客户端和服务端代码
+
+### Proto3 语法要点
+- `syntax = "proto3"`: 使用 proto3 语法版本（更简洁，去除了 required/optional）
+- `package`: 定义包名，避免不同服务之间的命名冲突
+- `option go_package`: 指定生成的 Go 代码包路径
+- `message`: 定义数据结构（类似于 struct）
+- `service`: 定义 RPC 服务接口
+- `rpc`: 定义远程调用方法
+
+### 数据类型说明
+- `string`: 字符串类型（UTF-8 编码）
+- `int32`: 32位有符号整数（-2^31 到 2^31-1）
+- `int64`: 64位有符号整数（用于时间戳、大数值）
+- `bool`: 布尔类型（true 或 false）
+- `repeated`: 数组/列表类型（可重复字段）
+
+### 字段编号规则
+- 每个字段的编号（如 `= 1`, `= 2`）在消息中必须唯一
+- 编号 1-15 使用 1 个字节编码，建议用于常用字段
+- 编号 16-2047 使用 2 个字节编码
+- 编号一旦分配，不应修改，以保持向后兼容性
+
+---
+
+## 数据模型定义
+
+### Friends - 好友关系
+```protobuf
+message Friends {
+  int32  id = 1;           // 好友关系记录ID（数据库主键）
+  string userId = 2;       // 用户ID（谁的好友列表）
+  string remark = 3;       // 好友备注名（用户可以给好友设置备注）
+  int32  addSource = 4;    // 添加来源（1=搜索添加，2=扫码添加，3=群聊添加等）
+  string friendUid = 5;    // 好友的用户ID
+}
+```
+
+**业务说明：**
+- 好友关系是双向的，A添加B为好友，需要在数据库中存储两条记录
+- `remark` 允许用户自定义好友显示名称，不影响对方
+- `addSource` 用于统计分析，了解用户通过什么渠道添加好友
+
+
+### FriendRequests - 好友申请
+```protobuf
+message FriendRequests {
+  int32  id = 1;           // 申请记录ID
+  string userId = 2;       // 被申请人的用户ID（谁收到了好友申请）
+  string reqUid = 3;       // 申请人的用户ID（谁发起了好友申请）
+  string reqMsg = 4;       // 申请消息（验证信息，如"我是你的同学"）
+  int64  reqTime = 5;      // 申请时间（Unix 时间戳，毫秒）
+  int32  handleResult = 6; // 处理结果（0=待处理，1=已同意，2=已拒绝）
+}
+```
+
+**业务说明：**
+- 用户A向用户B发送好友申请，会在B的申请列表中创建一条记录
+- `handleResult` 状态流转：待处理 -> 已同意/已拒绝
+- 已处理的申请可以保留一段时间，方便用户查看历史记录
+
+---
+
+### Groups - 群组
+```protobuf
+message Groups {
+  string id = 1;              // 群组ID（唯一标识符）
+  string name = 2;            // 群名称
+  string icon = 3;            // 群头像URL
+  int32  status = 4;          // 群状态（0=正常，1=已解散，2=已封禁）
+  string creator_uid = 5;     // 创建者用户ID（群主）
+  int32  groupType = 6;       // 群类型（1=普通群，2=企业群，3=兴趣群等）
+  bool   isVerify = 7;        // 是否需要验证（true=需要审批，false=自由加入）
+  string notification = 8;    // 群公告内容
+  string notificationUid = 9; // 发布公告的用户ID
+}
+```
+
+**业务说明：**
+- `creator_uid` 是群主，拥有最高权限
+- `isVerify` 控制加群方式：需要审批或直接加入
+- `notification` 用于发布群公告，所有成员可见
+- `status` 用于群组生命周期管理
+
+---
+
+### GroupMembers - 群成员
+```protobuf
+message GroupMembers {
+  int32  id = 1;           // 成员记录ID
+  string groupId = 2;      // 所属群组ID
+  string userId = 3;       // 成员用户ID
+  int32  roleLevel = 6;    // 角色等级（1=群主，2=管理员，3=普通成员）
+  int64  joinTime = 7;     // 加入时间（Unix 时间戳）
+  int32  joinSource = 8;   // 加入来源（1=邀请，2=搜索，3=扫码等）
+  string inviterUid = 9;   // 邀请人用户ID
+  string operatorUid = 10; // 操作人用户ID（谁批准了加群申请）
+}
+```
+
+**业务说明：**
+- `roleLevel` 决定成员权限：群主 > 管理员 > 普通成员
+- 群主可以设置管理员，管理员可以审批加群申请、踢人等
+- `inviterUid` 和 `operatorUid` 用于追溯成员来源
+
+---
+
+### GroupRequests - 入群申请
+```protobuf
+message GroupRequests {
+  int32  id = 1;           // 申请记录ID
+  string groupId = 2;      // 申请加入的群组ID
+  string reqId = 3;        // 申请人用户ID
+  string reqMsg = 4;       // 申请消息（验证信息）
+  int64  reqTime = 5;      // 申请时间（Unix 时间戳）
+  int32  joinSource = 6;   // 加入来源
+  string inviterUid = 7;   // 邀请人用户ID（如果是被邀请的）
+  string handleUid = 8;    // 处理人用户ID（群主或管理员）
+  int32  handleResult = 9; // 处理结果（0=待处理，1=已同意，2=已拒绝）
+}
+```
+
+**业务说明：**
+- 当群设置为需要验证时，用户申请加群会创建此记录
+- 群主或管理员可以审批申请
+- 如果是邀请加入，`inviterUid` 会记录邀请人
+
+---
+
+## 请求和响应定义 - 好友相关
+
+### FriendPutInReq - 发送好友申请请求
+```protobuf
+message FriendPutInReq {
+  string userId = 2;       // 被申请人的用户ID（要添加谁为好友）
+  string reqUid = 3;       // 申请人的用户ID（谁发起申请）
+  string reqMsg = 4;       // 申请消息（验证信息）
+  int64  reqTime = 5;      // 申请时间
+}
+```
+
+**用途：** 用户A向用户B发送好友申请
+
+**业务流程：**
+1. 验证双方是否已经是好友
+2. 检查是否已有待处理的申请
+3. 创建好友申请记录
+4. 发送通知给被申请人
+
+### FriendPutInResp - 发送好友申请响应
+```protobuf
+message FriendPutInResp {}
+```
+
+---
+
+### FriendPutInHandleReq - 处理好友申请请求
+```protobuf
+message FriendPutInHandleReq {
+  int32  friendReqId = 1;  // 好友申请记录ID
+  string userId = 2;       // 处理人用户ID（被申请人）
+  int32 handleResult = 3;  // 处理结果（1=同意，2=拒绝）
+}
+```
+
+**用途：** 用户处理收到的好友申请（同意或拒绝）
+
+**业务流程：**
+1. 验证申请是否存在且待处理
+2. 更新申请状态
+3. 如果同意，建立双向好友关系
+4. 发送通知给申请人
+
+### FriendPutInHandleResp - 处理好友申请响应
+```protobuf
+message FriendPutInHandleResp {}
+```
+
+---
+
+### FriendPutInListReq - 获取好友申请列表请求
+```protobuf
+message FriendPutInListReq {
+  string userId = 1;       // 用户ID
+}
+```
+
+**用途：** 获取用户收到的所有好友申请
+
+### FriendPutInListResp - 获取好友申请列表响应
+```protobuf
+message FriendPutInListResp {
+  repeated FriendRequests list = 1;  // 好友申请列表
+}
+```
+
+---
+
+### FriendListReq - 获取好友列表请求
+```protobuf
+message FriendListReq {
+  string userId = 1;       // 用户ID
+}
+```
+
+**用途：** 获取用户的所有好友
+
+### FriendListResp - 获取好友列表响应
+```protobuf
+message FriendListResp {
+  repeated Friends list = 1;  // 好友列表
+}
+```
+
+---
+
+## 请求和响应定义 - 群组相关
+
+### GroupCreateReq - 创建群组请求
+```protobuf
+message GroupCreateReq {
+  string name = 2;         // 群名称
+  string icon = 3;         // 群头像URL
+  int32  status = 4;       // 群状态
+  string creator_uid = 5;  // 创建者用户ID
+}
+```
+
+**用途：** 创建新群组
+
+**业务流程：**
+1. 验证群名称是否合法
+2. 生成群组ID
+3. 创建群组记录
+4. 将创建者添加为群主
+5. 返回群组ID
+
+### GroupCreateResp - 创建群组响应
+```protobuf
+message GroupCreateResp {
+  string id = 1;           // 新创建的群组ID
+}
+```
+
+---
+
+### GroupPutinReq - 申请加入群组请求
+```protobuf
+message GroupPutinReq {
+  string groupId = 2;      // 群组ID
+  string reqId = 3;        // 申请人用户ID
+  string reqMsg = 4;       // 申请消息
+  int64  reqTime = 5;      // 申请时间
+  int32  joinSource = 6;   // 加入来源
+  string inviterUid = 7;   // 邀请人用户ID（如果有）
+}
+```
+
+**用途：** 用户申请加入群组
+
+**业务流程：**
+1. 检查用户是否已在群中
+2. 检查群是否需要验证
+3. 如果不需要验证，直接加入
+4. 如果需要验证，创建申请记录
+
+### GroupPutinResp - 申请加入群组响应
+```protobuf
+message GroupPutinResp {
+  string groupId = 1;      // 群组ID
+}
+```
+
+---
+
+### GroupPutinListReq - 获取入群申请列表请求
+```protobuf
+message GroupPutinListReq {
+  string groupId = 1;      // 群组ID
+}
+```
+
+**用途：** 获取某个群的所有入群申请（群主/管理员使用）
+
+### GroupPutinListResp - 获取入群申请列表响应
+```protobuf
+message GroupPutinListResp {
+  repeated GroupRequests list = 1;  // 入群申请列表
+}
+```
+
+---
+
+### GroupPutInHandleReq - 处理入群申请请求
+```protobuf
+message GroupPutInHandleReq {
+  int32  groupReqId = 1;   // 申请记录ID
+  string groupId = 2;      // 群组ID
+  string handleUid = 3;    // 处理人用户ID（群主或管理员）
+  int32  handleResult = 4; // 处理结果（1=同意，2=拒绝）
+  string username = 6;     // 申请人用户名（用于通知）
+  string userAvatarUrl = 7;// 申请人头像URL（用于通知）
+}
+```
+
+**用途：** 群主或管理员处理入群申请
+
+**业务流程：**
+1. 验证处理人权限（必须是群主或管理员）
+2. 验证申请是否存在且待处理
+3. 更新申请状态
+4. 如果同意，将用户添加到群成员
+5. 发送通知给申请人
+
+### GroupPutInHandleResp - 处理入群申请响应
+```protobuf
+message GroupPutInHandleResp {
+  string groupId = 1;      // 群组ID
+}
+```
+
+---
+
+### GroupListReq - 获取用户群组列表请求
+```protobuf
+message GroupListReq {
+  string userId = 1;       // 用户ID
+}
+```
+
+**用途：** 获取用户加入的所有群组
+
+### GroupListResp - 获取用户群组列表响应
+```protobuf
+message GroupListResp {
+  repeated Groups list = 1;  // 群组列表
+}
+```
+
+---
+
+### GroupUsersReq - 获取群成员列表请求
+```protobuf
+message GroupUsersReq {
+  string groupId = 1;      // 群组ID
+}
+```
+
+**用途：** 获取某个群的所有成员
+
+### GroupUsersResp - 获取群成员列表响应
+```protobuf
+message GroupUsersResp {
+  repeated GroupMembers List = 1;  // 群成员列表
+}
+```
+
+---
+
+## 服务接口定义
+
+### social Service - 社交服务
+```protobuf
+service social {
+  // 好友业务：请求好友、通过或拒绝申请、好友列表
+  
+  rpc FriendPutIn(FriendPutInReq) returns(FriendPutInResp);
+  rpc FriendPutInHandle(FriendPutInHandleReq) returns(FriendPutInHandleResp);
+  rpc FriendPutInList(FriendPutInListReq) returns(FriendPutInListResp);
+  rpc FriendList(FriendListReq) returns (FriendListResp);
+
+  // 群业务：创建群，修改群，群公告，申请群，用户群列表，群成员，申请群，群退出..
+  
+  rpc GroupCreate(GroupCreateReq) returns (GroupCreateResp);
+  rpc GroupPutin(GroupPutinReq) returns (GroupPutinResp);
+  rpc GroupPutinList(GroupPutinListReq) returns (GroupPutinListResp);
+  rpc GroupPutInHandle(GroupPutInHandleReq) returns(GroupPutInHandleResp);
+  rpc GroupList(GroupListReq) returns (GroupListResp);
+  rpc GroupUsers(GroupUsersReq) returns (GroupUsersResp);
+}
+```
+
+### RPC 方法详解 - 好友相关
+
+#### 1. FriendPutIn - 发送好友申请
+**功能：** 向其他用户发送好友申请
+
+**使用场景：**
+- 用户搜索到某人，点击"添加好友"
+- 扫描二维码添加好友
+- 从群聊中添加好友
+
+**业务逻辑：**
+- 检查是否已经是好友（避免重复添加）
+- 检查是否有待处理的申请（避免重复发送）
+- 创建好友申请记录
+- 推送通知给被申请人
+
+#### 2. FriendPutInHandle - 处理好友申请
+**功能：** 同意或拒绝好友申请
+
+**使用场景：**
+- 用户在"新的朋友"页面处理申请
+
+**业务逻辑：**
+- 验证申请是否存在且属于当前用户
+- 更新申请状态
+- 如果同意：
+  - 在双方的好友列表中添加记录
+  - 建立双向好友关系
+  - 推送通知给申请人
+- 如果拒绝：
+  - 仅更新申请状态
+  - 可选择是否通知申请人
+
+#### 3. FriendPutInList - 获取好友申请列表
+**功能：** 查看收到的所有好友申请
+
+**使用场景：**
+- 用户打开"新的朋友"页面
+- 显示待处理和已处理的申请
+
+**返回数据：**
+- 按时间倒序排列
+- 包含申请人信息和验证消息
+
+#### 4. FriendList - 获取好友列表
+**功能：** 获取用户的所有好友
+
+**使用场景：**
+- 用户打开通讯录
+- 选择聊天对象
+- 创建群聊时选择成员
+
+**返回数据：**
+- 包含好友的基本信息
+- 包含备注名
+- 可按首字母排序
+
+### RPC 方法详解 - 群组相关
+
+#### 5. GroupCreate - 创建群组
+**功能：** 创建新的群组
+
+**使用场景：**
+- 用户发起创建群聊
+- 选择初始成员
+
+**业务逻辑：**
+- 验证群名称（长度、敏感词）
+- 生成唯一的群组ID
+- 创建群组记录
+- 将创建者设为群主
+- 可选：邀请初始成员
+
+#### 6. GroupPutin - 申请加入群组
+**功能：** 用户申请加入某个群
+
+**使用场景：**
+- 搜索群组后申请加入
+- 扫描群二维码
+- 通过邀请链接加入
+
+**业务逻辑：**
+- 检查用户是否已在群中
+- 检查群是否已满
+- 如果群设置为自由加入，直接加入
+- 如果需要验证，创建申请记录并通知管理员
+
+#### 7. GroupPutinList - 获取入群申请列表
+**功能：** 查看群的所有入群申请
+
+**使用场景：**
+- 群主或管理员查看待处理的申请
+
+**权限：** 仅群主和管理员可调用
+
+#### 8. GroupPutInHandle - 处理入群申请
+**功能：** 同意或拒绝入群申请
+
+**使用场景：**
+- 群主或管理员审批入群申请
+
+**业务逻辑：**
+- 验证处理人权限
+- 验证申请状态
+- 如果同意：
+  - 将用户添加到群成员
+  - 更新群成员数
+  - 通知申请人和群成员
+- 如果拒绝：
+  - 更新申请状态
+  - 通知申请人
+
+#### 9. GroupList - 获取用户群组列表
+**功能：** 获取用户加入的所有群
+
+**使用场景：**
+- 用户打开群聊列表
+- 选择群聊
+
+**返回数据：**
+- 包含群的基本信息
+- 按最近活跃时间排序
+
+#### 10. GroupUsers - 获取群成员列表
+**功能：** 查看群的所有成员
+
+**使用场景：**
+- 查看群成员
+- @某人时选择成员
+- 群管理（踢人、设置管理员）
+
+**返回数据：**
+- 包含成员的角色信息
+- 按加入时间或角色排序
+
+---
+
+## 在 Go-Zero 中使用
+
+### 1. 生成 Go 代码
+```bash
+# 在 proto 文件所在目录执行
+goctl rpc protoc social.proto --go_out=. --go-grpc_out=. --zrpc_out=.
+```
+
+**生成的文件：**
+- `social.pb.go`: Protobuf 消息定义
+- `social_grpc.pb.go`: gRPC 服务接口
+- `social.go`: Go-Zero RPC 服务框架代码
+- `etc/social.yaml`: 配置文件
+- `internal/logic/`: 业务逻辑实现目录
+
+### 2. 服务端实现示例
+```go
+// internal/logic/friendputinlogic.go
+type FriendPutInLogic struct {
+    ctx    context.Context
+    svcCtx *svc.ServiceContext
+    logx.Logger
+}
+
+func (l *FriendPutInLogic) FriendPutIn(in *social.FriendPutInReq) (*social.FriendPutInResp, error) {
+    // 1. 验证参数
+    if in.UserId == "" || in.ReqUid == "" {
+        return nil, errors.New("参数错误")
+    }
+    
+    // 2. 检查是否已经是好友
+    exists, err := l.svcCtx.FriendsModel.CheckFriendship(in.ReqUid, in.UserId)
+    if err != nil {
+        return nil, err
+    }
+    if exists {
+        return nil, errors.New("已经是好友")
+    }
+    
+    // 3. 检查是否有待处理的申请
+    pending, err := l.svcCtx.FriendRequestsModel.GetPendingRequest(in.ReqUid, in.UserId)
+    if err != nil {
+        return nil, err
+    }
+    if pending != nil {
+        return nil, errors.New("已有待处理的申请")
+    }
+    
+    // 4. 创建好友申请记录
+    _, err = l.svcCtx.FriendRequestsModel.Insert(&model.FriendRequests{
+        UserId:       in.UserId,
+        ReqUid:       in.ReqUid,
+        ReqMsg:       in.ReqMsg,
+        ReqTime:      in.ReqTime,
+        HandleResult: 0, // 待处理
+    })
+    if err != nil {
+        return nil, err
+    }
+    
+    // 5. 发送通知（可以使用消息队列异步处理）
+    // l.svcCtx.NotificationQueue.Push(...)
+    
+    return &social.FriendPutInResp{}, nil
+}
+```
+
+### 3. 客户端调用示例
+```go
+// 创建 RPC 客户端
+socialClient := social.NewSocial(zrpc.MustNewClient(c.SocialRpc))
+
+// 发送好友申请
+resp, err := socialClient.FriendPutIn(ctx, &social.FriendPutInReq{
+    UserId:  "user_456",  // 被申请人
+    ReqUid:  "user_123",  // 申请人
+    ReqMsg:  "我是你的同学",
+    ReqTime: time.Now().UnixMilli(),
+})
+if err != nil {
+    log.Printf("发送好友申请失败: %v", err)
+    return
+}
+
+// 获取好友列表
+friendsResp, err := socialClient.FriendList(ctx, &social.FriendListReq{
+    UserId: "user_123",
+})
+if err != nil {
+    log.Printf("获取好友列表失败: %v", err)
+    return
+}
+
+for _, friend := range friendsResp.List {
+    fmt.Printf("好友: %s (备注: %s)\n", friend.FriendUid, friend.Remark)
+}
+```
+
+### 4. 配置文件示例
+```yaml
+# etc/social.yaml
+Name: social.rpc
+ListenOn: 0.0.0.0:8081
+
+# 数据库配置
+Mysql:
+  DataSource: user:password@tcp(localhost:3306)/social?charset=utf8mb4&parseTime=true
+
+# Redis 配置
+Redis:
+  Host: localhost:6379
+  Type: node
+  Pass: ""
+
+# 其他 RPC 服务配置
+UserRpc:
+  Etcd:
+    Hosts:
+      - localhost:2379
+    Key: user.rpc
+```
+
+### 5. 数据库表设计建议
+```sql
+-- 好友表
+CREATE TABLE friends (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    friend_uid VARCHAR(64) NOT NULL,
+    remark VARCHAR(128),
+    add_source INT DEFAULT 1,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_id (user_id),
+    UNIQUE KEY uk_user_friend (user_id, friend_uid)
+);
+
+-- 好友申请表
+CREATE TABLE friend_requests (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    req_uid VARCHAR(64) NOT NULL,
+    req_msg VARCHAR(256),
+    req_time BIGINT NOT NULL,
+    handle_result INT DEFAULT 0,
+    handle_time BIGINT,
+    INDEX idx_user_id (user_id),
+    INDEX idx_handle_result (handle_result)
+);
+
+-- 群组表
+CREATE TABLE groups (
+    id VARCHAR(64) PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    icon VARCHAR(256),
+    status INT DEFAULT 0,
+    creator_uid VARCHAR(64) NOT NULL,
+    group_type INT DEFAULT 1,
+    is_verify BOOLEAN DEFAULT FALSE,
+    notification TEXT,
+    notification_uid VARCHAR(64),
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 群成员表
+CREATE TABLE group_members (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    group_id VARCHAR(64) NOT NULL,
+    user_id VARCHAR(64) NOT NULL,
+    role_level INT DEFAULT 3,
+    join_time BIGINT NOT NULL,
+    join_source INT,
+    inviter_uid VARCHAR(64),
+    operator_uid VARCHAR(64),
+    INDEX idx_group_id (group_id),
+    INDEX idx_user_id (user_id),
+    UNIQUE KEY uk_group_user (group_id, user_id)
+);
+
+-- 入群申请表
+CREATE TABLE group_requests (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    group_id VARCHAR(64) NOT NULL,
+    req_id VARCHAR(64) NOT NULL,
+    req_msg VARCHAR(256),
+    req_time BIGINT NOT NULL,
+    join_source INT,
+    inviter_uid VARCHAR(64),
+    handle_uid VARCHAR(64),
+    handle_result INT DEFAULT 0,
+    handle_time BIGINT,
+    INDEX idx_group_id (group_id),
+    INDEX idx_handle_result (handle_result)
+);
+```
+
+---
+
+## 最佳实践
+
+### 1. 状态码定义
+建议定义清晰的状态码常量：
+```go
+// 好友申请处理结果
+const (
+    FriendRequestPending  = 0  // 待处理
+    FriendRequestAccepted = 1  // 已同意
+    FriendRequestRejected = 2  // 已拒绝
+)
+
+// 群组状态
+const (
+    GroupStatusNormal    = 0  // 正常
+    GroupStatusDissolved = 1  // 已解散
+    GroupStatusBanned    = 2  // 已封禁
+)
+
+// 群成员角色
+const (
+    GroupRoleOwner  = 1  // 群主
+    GroupRoleAdmin  = 2  // 管理员
+    GroupRoleMember = 3  // 普通成员
+)
+```
+
+### 2. 性能优化建议
+- **缓存热点数据**：好友列表、群成员列表使用 Redis 缓存
+- **分页查询**：好友列表、群成员列表支持分页，避免一次加载过多数据
+- **异步处理**：通知推送使用消息队列异步处理
+- **批量操作**：批量添加群成员时使用事务
+- **索引优化**：为常用查询字段添加数据库索引
+
+### 3. 安全性考虑
+- **权限验证**：每个操作都要验证用户权限
+- **防刷机制**：限制好友申请频率，防止骚扰
+- **敏感词过滤**：群名称、申请消息需要过滤敏感词
+- **黑名单机制**：支持拉黑用户，被拉黑的用户无法发送好友申请
+- **群人数限制**：设置群成员上限，防止超大群影响性能
+
+### 4. 业务扩展建议
+- **好友分组**：支持将好友分组管理
+- **好友标签**：为好友添加标签（同事、家人、朋友等）
+- **群公告**：支持发布和查看群公告
+- **群禁言**：支持全员禁言或单人禁言
+- **群文件**：支持群文件共享
+- **群投票**：支持群内发起投票
+
+---
+
+## 常见问题
+
+**Q: 为什么好友关系需要存储两条记录？**
+A: 因为每个用户都需要在自己的好友列表中看到对方，且可以设置不同的备注名。双向存储便于查询和管理。
+
+**Q: 如何实现好友推荐功能？**
+A: 可以基于共同好友、共同群组、通讯录匹配等算法实现。需要额外的数据分析服务。
+
+**Q: 群主退出群聊怎么办？**
+A: 群主退出前需要转让群主身份给其他成员，或者直接解散群聊。
+
+**Q: 如何防止恶意加好友？**
+A: 可以实现以下机制：
+- 限制每天发送好友申请的数量
+- 被拒绝多次后自动拉黑
+- 支持举报功能
+- 需要验证问题（如手机号后四位）
+
+**Q: 群成员上限应该设置多少？**
+A: 建议根据业务场景设置：
+- 普通群：200-500人
+- 企业群：1000-2000人
+- 超大群需要特殊优化（消息分发、存储等）

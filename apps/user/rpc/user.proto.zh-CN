@@ -1,0 +1,803 @@
+# User (用户) Proto 文件中文注释
+
+## 文件说明
+本文件定义了用户服务的 gRPC 接口和数据结构。
+主要功能包括：用户注册、登录、获取用户信息、查找用户等基础用户管理功能。
+
+## Protocol Buffers (Protobuf) 基础知识
+
+### 什么是 Protocol Buffers？
+Protocol Buffers（简称 Protobuf）是 Google 开发的一种数据序列化协议：
+- 语言无关、平台无关
+- 比 JSON/XML 更小、更快、更简单
+- 强类型，编译时检查
+- 自动生成代码，减少手工编写
+
+### 什么是 gRPC？
+gRPC 是一个高性能的 RPC（远程过程调用）框架：
+- 基于 HTTP/2 协议，支持双向流、多路复用
+- 使用 Protobuf 作为接口定义语言（IDL）
+- 跨语言支持（Go、Java、Python、C++等）
+- 自动生成客户端和服务端代码
+- 支持负载均衡、认证、追踪等特性
+
+### Proto3 语法说明
+- `syntax = "proto3"`: 声明使用 proto3 语法（最新版本）
+- `package`: 定义包名，用于命名空间隔离
+- `option go_package`: 指定生成的 Go 代码包路径
+- `message`: 定义数据结构（类似于 struct 或 class）
+- `service`: 定义 RPC 服务接口
+- `rpc`: 定义远程调用方法
+
+### 数据类型说明
+- `string`: 字符串类型（UTF-8 或 7-bit ASCII 编码）
+- `int32`: 32位有符号整数（-2,147,483,648 到 2,147,483,647）
+- `int64`: 64位有符号整数（用于大数值、时间戳）
+- `bool`: 布尔类型（true 或 false）
+- `repeated`: 数组/列表类型（表示可重复的字段）
+
+### 字段编号规则
+- 每个字段后面的数字（如 `= 1`, `= 2`）是字段的唯一标识符
+- 编号 1-15 使用 1 个字节编码，建议用于常用字段
+- 编号 16-2047 使用 2 个字节编码
+- 编号一旦分配，不应该修改，以保持向后兼容性
+- 已删除的字段编号不应该重用
+
+---
+
+## 数据模型定义
+
+### UserEntity - 用户实体
+```protobuf
+message UserEntity {
+  string  id = 1;        // 用户唯一标识符（UUID 或雪花ID）
+  string  avatar = 2;    // 用户头像URL
+  string  nickname = 3;  // 用户昵称（显示名称）
+  string  phone  = 4;    // 手机号码（用于登录和找回密码）
+  int32   status  = 5;   // 账号状态（0=正常，1=锁定/封禁，2=注销）
+  int32   sex = 6;       // 性别（0=未知，1=男，2=女）
+}
+```
+
+**业务说明：**
+- `id` 是用户的唯一标识，全局唯一，不可修改
+- `avatar` 存储头像图片的 URL 地址，可以是 CDN 链接
+- `nickname` 是用户的显示名称，可以修改
+- `phone` 用于登录验证，需要保证唯一性
+- `status` 用于账号管理，锁定的账号无法登录
+- `sex` 用于用户画像和个性化推荐
+
+
+---
+
+## 请求和响应定义
+
+### Request - 通用请求（Ping测试）
+```protobuf
+message Request {
+  string ping = 1;       // Ping 消息内容
+}
+```
+
+**用途：** 用于测试服务是否正常运行（健康检查）
+
+### Response - 通用响应（Pong测试）
+```protobuf
+message Response {
+  string pong = 1;       // Pong 响应内容
+}
+```
+
+**说明：** 返回 Pong 消息，表示服务正常
+
+---
+
+### LoginReq - 登录请求
+```protobuf
+message LoginReq {
+  string  phone = 1;     // 手机号码
+  string  password = 2;  // 密码（建议传输前端加密后的密码）
+}
+```
+
+**用途：** 用户登录
+
+**业务说明：**
+- `phone` 作为登录账号，需要验证格式
+- `password` 建议在前端使用 MD5 或 SHA256 加密后传输
+- 服务端需要验证密码是否正确
+
+### LoginResp - 登录响应
+```protobuf
+message LoginResp {
+  string id = 3;         // 用户ID
+  string Token = 1;      // JWT Token（用于后续请求的身份验证）
+  int64 expire = 2;      // Token 过期时间（Unix 时间戳，秒）
+}
+```
+
+**说明：**
+- `Token` 是 JWT（JSON Web Token），包含用户身份信息
+- 客户端需要在后续请求的 Header 中携带 Token
+- `expire` 表示 Token 的过期时间，过期后需要重新登录
+
+---
+
+### RegisterReq - 注册请求
+```protobuf
+message RegisterReq {
+  string  phone = 1;     // 手机号码
+  string  nickname = 2;  // 昵称
+  string  password = 3;  // 密码
+  string  avatar = 4;    // 头像URL（可选）
+  int32   sex = 5;       // 性别
+}
+```
+
+**用途：** 用户注册新账号
+
+**业务流程：**
+1. 验证手机号格式和唯一性
+2. 验证昵称长度和敏感词
+3. 密码加密存储（使用 bcrypt 或 argon2）
+4. 生成用户ID
+5. 创建用户记录
+6. 返回 Token
+
+### RegisterResp - 注册响应
+```protobuf
+message RegisterResp {
+  string Token = 1;      // JWT Token
+  int64 expire = 2;      // Token 过期时间
+}
+```
+
+**说明：** 注册成功后直接返回 Token，用户无需再次登录
+
+---
+
+### GetUserInfoReq - 获取用户信息请求
+```protobuf
+message GetUserInfoReq {
+  string id = 1;         // 用户ID
+}
+```
+
+**用途：** 根据用户ID获取用户详细信息
+
+**使用场景：**
+- 查看用户资料
+- 显示聊天对象信息
+- 群成员信息展示
+
+### GetUserInfoResp - 获取用户信息响应
+```protobuf
+message GetUserInfoResp {
+  UserEntity user = 1;   // 用户实体
+}
+```
+
+**说明：** 返回完整的用户信息
+
+---
+
+### FindUserReq - 查找用户请求
+```protobuf
+message FindUserReq {
+  string name = 1;           // 用户昵称（模糊搜索）
+  string phone = 2;          // 手机号码（精确搜索）
+  repeated string ids = 3;   // 用户ID列表（批量查询）
+}
+```
+
+**用途：** 多条件查找用户
+
+**业务说明：**
+- 三个条件可以单独使用或组合使用
+- `name` 支持模糊搜索（LIKE 查询）
+- `phone` 精确匹配
+- `ids` 用于批量获取用户信息（如获取群成员详情）
+
+### FindUserResp - 查找用户响应
+```protobuf
+message FindUserResp {
+  repeated UserEntity user = 1;  // 用户列表
+}
+```
+
+**说明：** 返回符合条件的用户列表
+
+---
+
+## 服务接口定义
+
+### User Service - 用户服务
+```protobuf
+service User {
+  // 健康检查
+  rpc Ping(Request) returns (Response);
+
+  // 用户登录
+  rpc Login(LoginReq) returns (LoginResp);
+
+  // 用户注册
+  rpc Register(RegisterReq) returns (RegisterResp);
+
+  // 获取用户信息
+  rpc GetUserInfo(GetUserInfoReq) returns (GetUserInfoResp);
+
+  // 查找用户
+  rpc FindUser(FindUserReq) returns (FindUserResp);
+}
+```
+
+### RPC 方法详解
+
+#### 1. Ping - 健康检查
+**功能：** 测试服务是否正常运行
+
+**使用场景：**
+- 服务启动后的健康检查
+- 负载均衡器的健康探测
+- 监控系统的存活检测
+
+**实现示例：**
+```go
+func (l *PingLogic) Ping(in *user.Request) (*user.Response, error) {
+    return &user.Response{
+        Pong: "pong: " + in.Ping,
+    }, nil
+}
+```
+
+#### 2. Login - 用户登录
+**功能：** 验证用户身份并返回访问令牌
+
+**使用场景：**
+- 用户输入手机号和密码登录
+- 移动端 App 登录
+- Web 端登录
+
+**业务逻辑：**
+1. 验证手机号格式
+2. 查询用户是否存在
+3. 验证密码是否正确（使用 bcrypt.CompareHashAndPassword）
+4. 检查账号状态（是否被锁定）
+5. 生成 JWT Token
+6. 记录登录日志
+7. 返回 Token 和用户ID
+
+**安全考虑：**
+- 密码错误次数限制（防暴力破解）
+- 登录失败延迟响应（防时序攻击）
+- 记录异常登录行为
+
+#### 3. Register - 用户注册
+**功能：** 创建新用户账号
+
+**使用场景：**
+- 新用户注册
+- 可以扩展为手机验证码注册
+
+**业务逻辑：**
+1. 验证手机号格式和唯一性
+2. 验证昵称（长度、敏感词）
+3. 验证密码强度（长度、复杂度）
+4. 密码加密存储（使用 bcrypt）
+5. 生成唯一用户ID（UUID 或雪花算法）
+6. 创建用户记录
+7. 生成 JWT Token
+8. 返回 Token
+
+**数据验证：**
+- 手机号：11位数字，符合中国手机号规则
+- 昵称：2-20个字符，不含敏感词
+- 密码：6-20位，建议包含字母和数字
+
+#### 4. GetUserInfo - 获取用户信息
+**功能：** 根据用户ID获取用户详细信息
+
+**使用场景：**
+- 查看用户资料页
+- 聊天界面显示对方信息
+- 好友列表显示好友信息
+- 群成员列表显示成员信息
+
+**业务逻辑：**
+1. 验证用户ID是否有效
+2. 从缓存或数据库查询用户信息
+3. 过滤敏感信息（如密码、手机号部分隐藏）
+4. 返回用户信息
+
+**性能优化：**
+- 使用 Redis 缓存用户信息
+- 缓存过期时间：30分钟
+- 用户信息更新时清除缓存
+
+#### 5. FindUser - 查找用户
+**功能：** 多条件搜索用户
+
+**使用场景：**
+- 搜索用户添加好友
+- 通过手机号精确查找
+- 批量获取用户信息（如群成员详情）
+
+**业务逻辑：**
+- 按昵称模糊搜索：`SELECT * FROM users WHERE nickname LIKE '%keyword%'`
+- 按手机号精确搜索：`SELECT * FROM users WHERE phone = ?`
+- 按ID列表批量查询：`SELECT * FROM users WHERE id IN (?)`
+
+**搜索优化：**
+- 昵称搜索建立全文索引
+- 限制返回结果数量（如最多100条）
+- 支持分页查询
+
+---
+
+## 在 Go-Zero 中使用
+
+### 1. 生成 Go 代码
+```bash
+# 在 proto 文件所在目录执行
+goctl rpc protoc user.proto --go_out=. --go-grpc_out=. --zrpc_out=.
+```
+
+**生成的文件结构：**
+```
+user/
+├── etc/
+│   └── user.yaml           # 配置文件
+├── internal/
+│   ├── config/
+│   │   └── config.go       # 配置结构体
+│   ├── logic/
+│   │   ├── loginlogic.go   # 登录逻辑
+│   │   ├── registerlogic.go # 注册逻辑
+│   │   └── ...
+│   ├── server/
+│   │   └── userserver.go   # gRPC 服务实现
+│   └── svc/
+│       └── servicecontext.go # 服务上下文
+├── user.go                 # 服务入口
+├── user.pb.go              # Protobuf 生成的消息定义
+└── user_grpc.pb.go         # gRPC 生成的服务接口
+```
+
+### 2. 服务端实现示例
+
+#### 登录逻辑实现
+```go
+// internal/logic/loginlogic.go
+type LoginLogic struct {
+    ctx    context.Context
+    svcCtx *svc.ServiceContext
+    logx.Logger
+}
+
+func (l *LoginLogic) Login(in *user.LoginReq) (*user.LoginResp, error) {
+    // 1. 验证参数
+    if in.Phone == "" || in.Password == "" {
+        return nil, errors.New("手机号和密码不能为空")
+    }
+    
+    // 2. 查询用户
+    userInfo, err := l.svcCtx.UserModel.FindOneByPhone(in.Phone)
+    if err != nil {
+        if err == model.ErrNotFound {
+            return nil, errors.New("用户不存在")
+        }
+        return nil, err
+    }
+    
+    // 3. 验证密码
+    err = bcrypt.CompareHashAndPassword(
+        []byte(userInfo.Password), 
+        []byte(in.Password),
+    )
+    if err != nil {
+        return nil, errors.New("密码错误")
+    }
+    
+    // 4. 检查账号状态
+    if userInfo.Status != 0 {
+        return nil, errors.New("账号已被锁定")
+    }
+    
+    // 5. 生成 JWT Token
+    now := time.Now().Unix()
+    expire := l.svcCtx.Config.Auth.AccessExpire
+    token, err := l.getJwtToken(
+        l.svcCtx.Config.Auth.AccessSecret,
+        now,
+        expire,
+        userInfo.Id,
+    )
+    if err != nil {
+        return nil, err
+    }
+    
+    // 6. 返回结果
+    return &user.LoginResp{
+        Id:     userInfo.Id,
+        Token:  token,
+        Expire: now + expire,
+    }, nil
+}
+
+func (l *LoginLogic) getJwtToken(secretKey string, iat, seconds int64, userId string) (string, error) {
+    claims := make(jwt.MapClaims)
+    claims["exp"] = iat + seconds
+    claims["iat"] = iat
+    claims["userId"] = userId
+    token := jwt.New(jwt.SigningMethodHS256)
+    token.Claims = claims
+    return token.SignedString([]byte(secretKey))
+}
+```
+
+#### 注册逻辑实现
+```go
+// internal/logic/registerlogic.go
+func (l *RegisterLogic) Register(in *user.RegisterReq) (*user.RegisterResp, error) {
+    // 1. 验证手机号格式
+    if !isValidPhone(in.Phone) {
+        return nil, errors.New("手机号格式错误")
+    }
+    
+    // 2. 检查手机号是否已注册
+    _, err := l.svcCtx.UserModel.FindOneByPhone(in.Phone)
+    if err == nil {
+        return nil, errors.New("手机号已被注册")
+    }
+    if err != model.ErrNotFound {
+        return nil, err
+    }
+    
+    // 3. 验证昵称
+    if len(in.Nickname) < 2 || len(in.Nickname) > 20 {
+        return nil, errors.New("昵称长度应为2-20个字符")
+    }
+    
+    // 4. 密码加密
+    hashedPassword, err := bcrypt.GenerateFromPassword(
+        []byte(in.Password), 
+        bcrypt.DefaultCost,
+    )
+    if err != nil {
+        return nil, err
+    }
+    
+    // 5. 生成用户ID（使用雪花算法）
+    userId := l.svcCtx.SnowflakeNode.Generate().String()
+    
+    // 6. 创建用户记录
+    _, err = l.svcCtx.UserModel.Insert(&model.User{
+        Id:       userId,
+        Phone:    in.Phone,
+        Nickname: in.Nickname,
+        Password: string(hashedPassword),
+        Avatar:   in.Avatar,
+        Sex:      in.Sex,
+        Status:   0,
+    })
+    if err != nil {
+        return nil, err
+    }
+    
+    // 7. 生成 Token
+    now := time.Now().Unix()
+    expire := l.svcCtx.Config.Auth.AccessExpire
+    token, err := l.getJwtToken(
+        l.svcCtx.Config.Auth.AccessSecret,
+        now,
+        expire,
+        userId,
+    )
+    if err != nil {
+        return nil, err
+    }
+    
+    return &user.RegisterResp{
+        Token:  token,
+        Expire: now + expire,
+    }, nil
+}
+```
+
+### 3. 客户端调用示例
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    
+    "github.com/zeromicro/go-zero/zrpc"
+    "your-project/apps/user/rpc/user"
+)
+
+func main() {
+    // 创建 RPC 客户端
+    userRpc := zrpc.MustNewClient(zrpc.RpcClientConf{
+        Etcd: discov.EtcdConf{
+            Hosts: []string{"localhost:2379"},
+            Key:   "user.rpc",
+        },
+    })
+    userClient := user.NewUser(userRpc)
+    
+    ctx := context.Background()
+    
+    // 1. 用户注册
+    registerResp, err := userClient.Register(ctx, &user.RegisterReq{
+        Phone:    "13800138000",
+        Nickname: "张三",
+        Password: "123456",
+        Sex:      1,
+    })
+    if err != nil {
+        log.Fatalf("注册失败: %v", err)
+    }
+    fmt.Printf("注册成功，Token: %s\n", registerResp.Token)
+    
+    // 2. 用户登录
+    loginResp, err := userClient.Login(ctx, &user.LoginReq{
+        Phone:    "13800138000",
+        Password: "123456",
+    })
+    if err != nil {
+        log.Fatalf("登录失败: %v", err)
+    }
+    fmt.Printf("登录成功，用户ID: %s, Token: %s\n", loginResp.Id, loginResp.Token)
+    
+    // 3. 获取用户信息
+    userInfoResp, err := userClient.GetUserInfo(ctx, &user.GetUserInfoReq{
+        Id: loginResp.Id,
+    })
+    if err != nil {
+        log.Fatalf("获取用户信息失败: %v", err)
+    }
+    fmt.Printf("用户信息: %+v\n", userInfoResp.User)
+    
+    // 4. 查找用户
+    findResp, err := userClient.FindUser(ctx, &user.FindUserReq{
+        Name: "张",
+    })
+    if err != nil {
+        log.Fatalf("查找用户失败: %v", err)
+    }
+    fmt.Printf("找到 %d 个用户\n", len(findResp.User))
+    for _, u := range findResp.User {
+        fmt.Printf("- %s (%s)\n", u.Nickname, u.Phone)
+    }
+}
+```
+
+### 4. 配置文件示例
+```yaml
+# etc/user.yaml
+Name: user.rpc
+ListenOn: 0.0.0.0:8082
+
+# 服务注册与发现（使用 Etcd）
+Etcd:
+  Hosts:
+    - localhost:2379
+  Key: user.rpc
+
+# 数据库配置
+Mysql:
+  DataSource: root:password@tcp(localhost:3306)/easy_chat?charset=utf8mb4&parseTime=true&loc=Local
+
+# Redis 配置
+Redis:
+  Host: localhost:6379
+  Type: node
+  Pass: ""
+
+# JWT 配置
+Auth:
+  AccessSecret: "your-secret-key-change-in-production"
+  AccessExpire: 86400  # 24小时（秒）
+
+# 日志配置
+Log:
+  ServiceName: user.rpc
+  Mode: console
+  Level: info
+```
+
+### 5. 数据库表设计
+```sql
+CREATE TABLE `users` (
+  `id` VARCHAR(64) PRIMARY KEY COMMENT '用户ID',
+  `phone` VARCHAR(11) NOT NULL UNIQUE COMMENT '手机号',
+  `password` VARCHAR(255) NOT NULL COMMENT '密码（加密）',
+  `nickname` VARCHAR(50) NOT NULL COMMENT '昵称',
+  `avatar` VARCHAR(255) DEFAULT '' COMMENT '头像URL',
+  `sex` TINYINT DEFAULT 0 COMMENT '性别：0=未知，1=男，2=女',
+  `status` TINYINT DEFAULT 0 COMMENT '状态：0=正常，1=锁定，2=注销',
+  `create_time` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  INDEX `idx_phone` (`phone`),
+  INDEX `idx_nickname` (`nickname`),
+  INDEX `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
+```
+
+---
+
+## 最佳实践
+
+### 1. 密码安全
+```go
+// 使用 bcrypt 加密密码
+import "golang.org/x/crypto/bcrypt"
+
+// 加密密码
+func HashPassword(password string) (string, error) {
+    bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+    return string(bytes), err
+}
+
+// 验证密码
+func CheckPassword(password, hash string) bool {
+    err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+    return err == nil
+}
+```
+
+### 2. JWT Token 生成
+```go
+import "github.com/golang-jwt/jwt/v4"
+
+func GenerateToken(userId string, secret string, expire int64) (string, error) {
+    now := time.Now().Unix()
+    claims := jwt.MapClaims{
+        "userId": userId,
+        "iat":    now,
+        "exp":    now + expire,
+    }
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+    return token.SignedString([]byte(secret))
+}
+```
+
+### 3. 用户信息缓存
+```go
+// 缓存用户信息到 Redis
+func (l *GetUserInfoLogic) GetUserInfo(in *user.GetUserInfoReq) (*user.GetUserInfoResp, error) {
+    // 1. 尝试从缓存获取
+    cacheKey := fmt.Sprintf("user:info:%s", in.Id)
+    var userInfo model.User
+    err := l.svcCtx.Redis.Get(cacheKey, &userInfo)
+    if err == nil {
+        // 缓存命中
+        return &user.GetUserInfoResp{
+            User: &user.UserEntity{
+                Id:       userInfo.Id,
+                Nickname: userInfo.Nickname,
+                Avatar:   userInfo.Avatar,
+                Phone:    userInfo.Phone,
+                Status:   userInfo.Status,
+                Sex:      userInfo.Sex,
+            },
+        }, nil
+    }
+    
+    // 2. 从数据库查询
+    userInfo, err = l.svcCtx.UserModel.FindOne(in.Id)
+    if err != nil {
+        return nil, err
+    }
+    
+    // 3. 写入缓存（30分钟过期）
+    l.svcCtx.Redis.Setex(cacheKey, userInfo, 1800)
+    
+    return &user.GetUserInfoResp{
+        User: &user.UserEntity{
+            Id:       userInfo.Id,
+            Nickname: userInfo.Nickname,
+            Avatar:   userInfo.Avatar,
+            Phone:    userInfo.Phone,
+            Status:   userInfo.Status,
+            Sex:      userInfo.Sex,
+        },
+    }, nil
+}
+```
+
+### 4. 手机号验证
+```go
+import "regexp"
+
+func IsValidPhone(phone string) bool {
+    // 中国大陆手机号正则
+    pattern := `^1[3-9]\d{9}$`
+    matched, _ := regexp.MatchString(pattern, phone)
+    return matched
+}
+```
+
+### 5. 防暴力破解
+```go
+// 使用 Redis 记录登录失败次数
+func (l *LoginLogic) checkLoginAttempts(phone string) error {
+    key := fmt.Sprintf("login:attempts:%s", phone)
+    attempts, _ := l.svcCtx.Redis.Get(key)
+    
+    if attempts >= 5 {
+        return errors.New("登录失败次数过多，请30分钟后再试")
+    }
+    return nil
+}
+
+func (l *LoginLogic) recordLoginFailure(phone string) {
+    key := fmt.Sprintf("login:attempts:%s", phone)
+    l.svcCtx.Redis.Incr(key)
+    l.svcCtx.Redis.Expire(key, 1800) // 30分钟过期
+}
+```
+
+---
+
+## 性能优化建议
+
+### 1. 数据库优化
+- 为 `phone` 字段创建唯一索引，加速登录查询
+- 为 `nickname` 字段创建索引，加速搜索
+- 使用连接池，避免频繁创建连接
+- 读写分离，查询走从库
+
+### 2. 缓存策略
+- 用户信息缓存：30分钟过期
+- 热点用户信息永久缓存，定时更新
+- 使用 Redis 集群提高可用性
+
+### 3. 并发控制
+- 注册时使用分布式锁，防止重复注册
+- 登录时使用令牌桶算法限流
+
+### 4. 安全加固
+- 密码传输使用 HTTPS
+- 敏感信息脱敏（手机号显示为 138****8000）
+- 定期更换 JWT Secret
+- 实现 Token 刷新机制
+
+---
+
+## 常见问题
+
+**Q: 为什么使用 bcrypt 而不是 MD5 加密密码？**
+A: bcrypt 是专门为密码设计的哈希算法，具有以下优势：
+- 自动加盐，防止彩虹表攻击
+- 计算速度慢，增加暴力破解成本
+- 可调节计算复杂度
+MD5 已被证明不安全，不应用于密码加密。
+
+**Q: JWT Token 过期后怎么办？**
+A: 有两种方案：
+1. 用户重新登录获取新 Token
+2. 实现 Refresh Token 机制，使用 Refresh Token 换取新的 Access Token
+
+**Q: 如何实现手机验证码登录？**
+A: 需要扩展以下功能：
+1. 添加发送验证码接口（调用短信服务）
+2. 验证码存储在 Redis（5分钟过期）
+3. 添加验证码登录接口
+4. 验证码验证后创建或登录用户
+
+**Q: 如何防止接口被恶意调用？**
+A: 可以实现以下防护措施：
+- 接口限流（每个IP每分钟最多调用N次）
+- 图形验证码（防机器人）
+- 设备指纹识别
+- 异常行为检测
+
+**Q: 用户ID使用什么生成策略？**
+A: 推荐使用雪花算法（Snowflake）：
+- 全局唯一
+- 趋势递增（对数据库索引友好）
+- 高性能（本地生成，无需网络请求）
+- 包含时间信息

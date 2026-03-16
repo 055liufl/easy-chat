@@ -1,0 +1,479 @@
+# ============================================================================
+# Docker Compose 配置文件 - 中文详细注释版本
+# ============================================================================
+# 文件说明：
+#   这是 easy-chat 项目的 Docker Compose 配置文件
+#   用于一键启动项目所需的所有基础服务
+#   包括：Etcd、Redis、MySQL、MongoDB、Kafka、Zookeeper、APISIX 等
+#
+# Docker Compose 说明：
+#   Docker Compose 是 Docker 官方的容器编排工具
+#   通过 YAML 文件定义多容器应用
+#   一条命令即可启动所有服务
+#
+# 使用命令：
+#   启动所有服务：docker-compose up -d
+#   停止所有服务：docker-compose down
+#   查看服务状态：docker-compose ps
+#   查看服务日志：docker-compose logs -f [服务名]
+# ============================================================================
+
+# version: Docker Compose 文件版本
+# 版本说明：
+#   - version 3: 支持 Docker 1.13.0+
+#   - 是目前最常用的版本
+version: '3'
+
+# services: 定义所有服务
+services:
+
+  # ==========================================================================
+  # Etcd 服务 - 服务注册与发现
+  # ==========================================================================
+  # Etcd 说明：
+  #   - 分布式键值存储系统
+  #   - Go-Zero 使用 Etcd 实现服务注册与发现
+  #   - 提供服务配置管理
+  etcd:
+    # image: Docker 镜像
+    # bitnami/etcd:3.4.15 是 Bitnami 提供的 Etcd 镜像
+    image: bitnami/etcd:3.4.15
+
+    # container_name: 容器名称
+    # 便于管理和识别容器
+    container_name: etcd
+
+    # ports: 端口映射
+    # 格式：宿主机端口:容器端口
+    ports:
+      - "3379:2379"  # 客户端通信端口
+      - "3380:2380"  # 服务器间通信端口
+
+    # environment: 环境变量
+    environment:
+      # ETCD_ENABLE_V2: 启用 Etcd v2 API
+      # 某些旧版本客户端可能需要 v2 API
+      - ETCD_ENABLE_V2=true
+
+      # ALLOW_NONE_AUTHENTICATION: 允许无认证访问
+      # 开发环境可以不设置认证，生产环境建议启用认证
+      - ALLOW_NONE_AUTHENTICATION=yes
+
+      # ETCD_ADVERTISE_CLIENT_URLS: 客户端访问地址
+      # 告诉客户端如何连接到 Etcd
+      # 注意：这里使用宿主机 IP，需要根据实际情况修改
+      - ETCD_ADVERTISE_CLIENT_URLS=http://192.168.117.24:3379
+
+      # ETCD_LISTEN_CLIENT_URLS: 监听地址
+      # 0.0.0.0 表示监听所有网络接口
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+
+      # ETCD_NAME: Etcd 节点名称
+      - ETCD_NAME=etcd
+
+    # volumes: 数据卷挂载
+    # 将容器内的数据持久化到宿主机
+    volumes:
+      - ./components/etcd/data:/bitnami/etcd/data    # 数据目录
+      - ./components/etcd/logs:/bitnami/etcd/logs    # 日志目录
+
+    # networks: 网络配置
+    # 将容器加入自定义网络
+    networks:
+      easy-chat:
+
+  # ==========================================================================
+  # Redis 服务 - 缓存和会话存储
+  # ==========================================================================
+  # Redis 说明：
+  #   - 内存数据库
+  #   - 用于缓存、Session 存储、消息队列等
+  #   - 提供高性能的读写能力
+  redis:
+    # image: Redis 官方镜像
+    # alpine3.18 是轻量级的 Linux 发行版
+    image: redis:alpine3.18
+
+    # ports: 端口映射
+    ports:
+      - 16379:6379  # Redis 默认端口
+
+    container_name: redis
+
+    # volumes: 数据卷挂载
+    volumes:
+      - ./components/redis/data:/data  # 数据持久化目录
+      - ./components/redis/config/redis.conf:/usr/local/redis/config/redis.conf  # 配置文件
+
+    # environment: 环境变量
+    environment:
+      TZ: Asia/Shanghai  # 时区设置
+
+    # restart: 重启策略
+    # always: 容器退出时总是重启
+    restart: always
+
+    networks:
+      easy-chat:
+
+    # command: 容器启动命令
+    # 启动 Redis 并设置密码和持久化
+    command: redis-server --requirepass easy-chat --appendonly yes
+
+  # ==========================================================================
+  # MySQL 服务 - 关系型数据库
+  # ==========================================================================
+  # MySQL 说明：
+  #   - 关系型数据库
+  #   - 存储用户信息、社交关系等结构化数据
+  #   - 支持事务和复杂查询
+  mysql:
+    # image: MySQL 5.7 官方镜像
+    image: mysql:5.7
+
+    ports:
+      - 13306:3306  # MySQL 默认端口
+
+    container_name: mysql
+
+    # volumes: 数据卷挂载
+    volumes:
+      - ./components/mysql/data:/var/lib/mysql  # 数据目录
+      - /etc/localtime:/etc/localtime           # 同步宿主机时间
+
+    # environment: 环境变量
+    environment:
+      # MYSQL_ROOT_PASSWORD: root 用户密码
+      MYSQL_ROOT_PASSWORD: easy-chat
+
+    restart: always
+
+    networks:
+      easy-chat:
+
+  # ==========================================================================
+  # MongoDB 服务 - 文档数据库
+  # ==========================================================================
+  # MongoDB 说明：
+  #   - NoSQL 文档数据库
+  #   - 存储聊天消息、会话等非结构化数据
+  #   - 支持灵活的文档结构和高性能读写
+  mongo:
+    # image: MongoDB 4.0 官方镜像
+    image: mongo:4.0
+
+    container_name: mongo
+
+    # environment: 环境变量
+    environment:
+      # MONGO_INITDB_ROOT_USERNAME: 管理员用户名
+      MONGO_INITDB_ROOT_USERNAME: root
+
+      # MONGO_INITDB_ROOT_PASSWORD: 管理员密码
+      MONGO_INITDB_ROOT_PASSWORD: easy-chat
+
+    ports:
+      - 47017:27017  # MongoDB 默认端口
+
+    # volumes: 数据卷挂载
+    volumes:
+      - ./components/mongo/data:/data/db  # 数据目录
+      - /etc/localtime:/etc/localtime     # 同步宿主机时间
+
+    restart: always
+
+    networks:
+      easy-chat:
+
+  # ==========================================================================
+  # Zookeeper 服务 - Kafka 依赖
+  # ==========================================================================
+  # Zookeeper 说明：
+  #   - 分布式协调服务
+  #   - Kafka 依赖 Zookeeper 进行集群管理
+  #   - 存储 Kafka 的元数据
+  zookeeper:
+    # image: Zookeeper 镜像
+    image: wurstmeister/zookeeper
+
+    ports:
+      - 2181:2181  # Zookeeper 默认端口
+
+    container_name: zookeeper
+
+    volumes:
+      - /etc/localtime:/etc/localtime
+
+    environment:
+      TZ: Asia/Shanghai
+
+    restart: always
+
+    networks:
+      easy-chat:
+
+  # ==========================================================================
+  # Kafka 服务 - 消息队列
+  # ==========================================================================
+  # Kafka 说明：
+  #   - 分布式消息队列
+  #   - 用于异步处理聊天消息
+  #   - 解耦消息接收和处理
+  #   - 保证消息不丢失
+  kafka:
+    # image: Kafka 镜像
+    image: wurstmeister/kafka
+
+    container_name: kafka
+
+    restart: always
+
+    ports:
+      - 9092:9092  # Kafka 默认端口
+
+    # environment: 环境变量
+    environment:
+      TZ: Asia/Shanghai
+
+      # KAFKA_BROKER_ID: Broker ID
+      # 集群中每个 broker 的唯一标识
+      KAFKA_BROKER_ID: 0
+
+      # KAFKA_ZOOKEEPER_CONNECT: Zookeeper 连接地址
+      # 使用容器名称连接（Docker 网络内部解析）
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+      # KAFKA_CREATE_TOPICS: 自动创建主题
+      # 格式：主题名:分区数:副本数
+      # ws2ms_chat: WebSocket 到消息服务的聊天消息
+      # ms2ps_chat: 消息服务到推送服务的聊天消息
+      # msg_to_mongo: 消息存储到 MongoDB
+      KAFKA_CREATE_TOPICS: "ws2ms_chat:8:1,ms2ps_chat:8:1,msg_to_mongo:8:1"
+
+      # KAFKA_ADVERTISED_LISTENERS: 广播监听地址
+      # 告诉客户端如何连接到 Kafka
+      # 注意：这里使用宿主机 IP，需要根据实际情况修改
+      KAFKA_ADVERTISED_LISTENERS: INSIDE://192.168.117.24:9092
+
+      # KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 监听器安全协议映射
+      # INSIDE 和 OUTSIDE 都使用 PLAINTEXT（无加密）
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT"
+
+      # KAFKA_INTER_BROKER_LISTENER_NAME: Broker 间通信监听器
+      KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
+
+      # KAFKA_LISTENERS: 监听地址
+      KAFKA_LISTENERS: INSIDE://:9092
+
+      # KAFKA_HEAP_OPTS: JVM 堆内存设置
+      # -Xmx512M: 最大堆内存 512MB
+      # -Xms256M: 初始堆内存 256MB
+      KAFKA_HEAP_OPTS: "-Xmx512M -Xms256M"
+
+    # depends_on: 依赖服务
+    # Kafka 依赖 Zookeeper，会在 Zookeeper 启动后再启动
+    depends_on:
+      - zookeeper
+
+    networks:
+      easy-chat:
+
+  # ==========================================================================
+  # APISIX Dashboard 服务 - API 网关管理界面
+  # ==========================================================================
+  # APISIX Dashboard 说明：
+  #   - APISIX 的 Web 管理界面
+  #   - 可视化管理路由、插件、上游等
+  #   - 提供友好的操作界面
+  apisix-dashboard:
+    # image: APISIX Dashboard 镜像
+    image: apache/apisix-dashboard:3.0.1-alpine
+
+    container_name: apisix-dashboard
+
+    restart: always
+
+    # depends_on: 依赖 Etcd
+    depends_on:
+      - etcd
+
+    # volumes: 挂载配置文件
+    volumes:
+      - ./components/apisix-dashboard/conf.yaml:/usr/local/apisix-dashboard/conf/conf.yaml
+
+    ports:
+      - "9000:9000"  # Dashboard Web 界面端口
+
+    networks:
+      easy-chat:
+
+  # ==========================================================================
+  # APISIX 服务 - API 网关
+  # ==========================================================================
+  # APISIX 说明：
+  #   - 高性能 API 网关
+  #   - 提供路由、负载均衡、限流、认证等功能
+  #   - 统一管理所有 API 入口
+  apisix:
+    # image: APISIX 镜像
+    # ${APISIX_IMAGE_TAG:-3.2.0-debian}: 使用环境变量或默认值
+    image: apache/apisix:${APISIX_IMAGE_TAG:-3.2.0-debian}
+
+    container_name: apisix
+
+    restart: always
+
+    # depends_on: 依赖服务
+    depends_on:
+      - etcd
+      - apisix-dashboard
+
+    # volumes: 挂载配置和日志
+    volumes:
+      - ./components/apisix/config.yaml:/usr/local/apisix/conf/config.yaml  # 配置文件
+      - ./components/apisix/logs:/usr/local/apisix/logs                     # 日志目录
+
+    # ports: 端口映射
+    ports:
+      - "9180:9180/tcp"  # Admin API 端口
+      - "9080:9080/tcp"  # HTTP 端口
+      - "9091:9091/tcp"  # Prometheus 监控端口
+      - "9443:9443/tcp"  # HTTPS 端口
+      - "9093:9092/tcp"  # Control API 端口
+
+    networks:
+      easy-chat:
+
+  # ==========================================================================
+  # Sail 服务 - 自定义服务
+  # ==========================================================================
+  # Sail 说明：
+  #   - 项目自定义服务
+  #   - 具体功能需要查看项目文档
+  sail:
+    # image: 腾讯云容器镜像
+    image: ccr.ccs.tencentyun.com/hyy-yu/sail:latest
+
+    container_name: sail
+
+    ports:
+      - "8108:8108"
+
+    # volumes: 挂载配置文件
+    volumes:
+      - "./components/sail/compose-cfg.toml:/app/cfg.toml"
+
+    restart: always
+
+    # platform: 指定平台架构
+    # linux/arm64: ARM64 架构（如 Apple M1/M2）
+    # 如果是 x86_64 架构，可以改为 linux/amd64
+    platform: linux/arm64
+
+    networks:
+      easy-chat:
+
+# ============================================================================
+# 网络配置
+# ============================================================================
+# networks: 定义自定义网络
+# 作用：
+#   - 所有服务在同一网络中可以通过容器名互相访问
+#   - 隔离不同项目的容器
+#   - 提供更好的网络管理
+networks:
+  easy-chat:
+    # driver: 网络驱动
+    # bridge: 桥接模式（默认）
+    driver: bridge
+
+# ============================================================================
+# 使用指南
+# ============================================================================
+# 1. 启动所有服务：
+#    docker-compose up -d
+#
+# 2. 查看服务状态：
+#    docker-compose ps
+#
+# 3. 查看服务日志：
+#    docker-compose logs -f [服务名]
+#    例如：docker-compose logs -f mysql
+#
+# 4. 停止所有服务：
+#    docker-compose stop
+#
+# 5. 停止并删除所有容器：
+#    docker-compose down
+#
+# 6. 重启某个服务：
+#    docker-compose restart [服务名]
+#    例如：docker-compose restart redis
+#
+# 7. 进入容器：
+#    docker-compose exec [服务名] bash
+#    例如：docker-compose exec mysql bash
+#
+# ============================================================================
+# 注意事项
+# ============================================================================
+# 1. IP 地址配置：
+#    - 配置文件中的 IP 地址（192.168.117.24）需要根据实际情况修改
+#    - 可以使用宿主机 IP 或容器名称
+#
+# 2. 端口冲突：
+#    - 确保宿主机端口未被占用
+#    - 如有冲突，修改端口映射
+#
+# 3. 数据持久化：
+#    - 数据卷挂载到 ./components 目录
+#    - 删除容器不会丢失数据
+#    - 定期备份重要数据
+#
+# 4. 资源限制：
+#    - 可以添加 resources 配置限制容器资源使用
+#    - 防止某个容器占用过多资源
+#
+# 5. 生产环境：
+#    - 启用服务认证（Etcd、Redis、MySQL 等）
+#    - 使用强密码
+#    - 配置资源限制
+#    - 配置健康检查
+#    - 使用 Docker Swarm 或 Kubernetes 进行编排
+#
+# ============================================================================
+# 服务访问地址
+# ============================================================================
+# - Etcd: http://192.168.117.24:3379
+# - Redis: 192.168.117.24:16379 (密码: easy-chat)
+# - MySQL: 192.168.117.24:13306 (用户: root, 密码: easy-chat)
+# - MongoDB: mongodb://root:easy-chat@192.168.117.24:47017
+# - Kafka: 192.168.117.24:9092
+# - Zookeeper: 192.168.117.24:2181
+# - APISIX Dashboard: http://192.168.117.24:9000 (用户: admin, 密码: admin)
+# - APISIX: http://192.168.117.24:9080
+# - Sail: http://192.168.117.24:8108
+#
+# ============================================================================
+# 故障排查
+# ============================================================================
+# 1. 服务启动失败：
+#    - 查看日志：docker-compose logs [服务名]
+#    - 检查端口是否被占用：lsof -i:[端口]
+#    - 检查配置文件是否正确
+#
+# 2. 服务无法连接：
+#    - 检查网络配置
+#    - 检查防火墙规则
+#    - 确认服务已启动：docker-compose ps
+#
+# 3. 数据丢失：
+#    - 检查数据卷挂载是否正确
+#    - 确认 ./components 目录存在
+#    - 恢复备份数据
+#
+# 4. 性能问题：
+#    - 检查容器资源使用：docker stats
+#    - 调整 JVM 堆内存（Kafka）
+#    - 优化数据库配置
+# ============================================================================

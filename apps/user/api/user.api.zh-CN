@@ -1,0 +1,258 @@
+/*
+================================================================================
+文件说明：user.api.zh-CN
+================================================================================
+这是 user.api 文件的详细中文注释文档。
+user.api 定义了用户服务的 HTTP API 接口，包括用户注册、登录和获取用户信息等功能。
+
+Go-Zero API 语法核心概念：
+1. @server：定义服务路由组的配置（前缀、分组、中间件、JWT 认证等）
+2. service：声明服务名称和包含的接口
+3. @doc：接口的文档说明
+4. @handler：指定处理该接口的 handler 函数名
+5. HTTP 方法：post、get、put、delete 等
+6. 路由路径：接口的 URL 路径
+7. 请求/响应：(RequestType) returns (ResponseType)
+
+================================================================================
+*/
+
+// ============================================================================
+// 第 1-10 行：API 基础配置和导入
+// ============================================================================
+syntax = "v1"
+// 说明：声明 API 语法版本
+
+info (
+	title: "用户服务的实例对象"
+	author: "木兮老师"
+)
+// 说明：API 元信息
+// - title：用户服务 API 文档标题
+// - author：API 作者
+
+import (
+	"domain.api"
+)
+// 说明：导入 domain.api 文件中定义的数据结构
+// 作用：复用 domain.api 中的 User、RegisterReq、LoginReq 等类型定义
+// 注意：Go-Zero 会自动查找同目录下的 domain.api 文件
+
+
+// ============================================================================
+// 第 12-26 行：无需登录的用户接口（注册和登录）
+// ============================================================================
+// -------------- user api v1 --------------
+// no need login
+@server(
+	prefix: v1/user
+	group: user
+)
+// @server 配置说明：
+// - prefix: v1/user
+//   作用：为该组内所有接口添加统一的 URL 前缀
+//   示例：接口 /register 实际访问路径为 /v1/user/register
+//
+// - group: user
+//   作用：指定生成的 handler 代码所在的分组目录
+//   生成路径：internal/handler/user/ 目录下
+//
+// 注意：此 @server 块没有 jwt 配置，表示这些接口无需登录即可访问
+
+service user{
+	@doc "用户注册"
+	@handler register
+	post /register(RegisterReq) returns (RegisterResp)
+	
+	@doc "用户登入"
+	@handler login
+	post /login (LoginReq) returns (LoginResp)
+}
+// 接口详细说明：
+
+// 【接口 1：用户注册】
+// - @doc "用户注册"：接口文档说明
+// - @handler register：生成的 handler 函数名为 RegisterHandler
+// - post /register：HTTP POST 方法，路径为 /register
+// - 完整路径：POST /v1/user/register
+// - 请求参数：RegisterReq（定义在 domain.api 中）
+//   {
+//     "phone": "13800138000",      // 手机号
+//     "password": "123456",         // 密码
+//     "nickname": "张三",           // 昵称
+//     "sex": 1,                     // 性别（1-男）
+//     "avatar": "http://..."        // 头像 URL
+//   }
+// - 响应数据：RegisterResp
+//   {
+//     "token": "eyJhbGc...",        // JWT Token
+//     "expire": 1678886400          // 过期时间戳
+//   }
+// - 业务场景：新用户注册账号
+// - 无需认证：任何人都可以调用
+
+// 【接口 2：用户登录】
+// - @doc "用户登入"：接口文档说明
+// - @handler login：生成的 handler 函数名为 LoginHandler
+// - post /login：HTTP POST 方法，路径为 /login
+// - 完整路径：POST /v1/user/login
+// - 请求参数：LoginReq（定义在 domain.api 中）
+//   {
+//     "phone": "13800138000",      // 手机号
+//     "password": "123456"          // 密码
+//   }
+// - 响应数据：LoginResp
+//   {
+//     "token": "eyJhbGc...",        // JWT Token
+//     "expire": 1678886400          // 过期时间戳
+//   }
+// - 业务场景：已注册用户登录系统
+// - 无需认证：任何人都可以调用
+
+
+// ============================================================================
+// 第 28-38 行：需要登录的用户接口（获取用户信息）
+// ============================================================================
+//need login
+@server(
+	prefix: v1/user
+	group: user
+	jwt: JwtAuth
+)
+// @server 配置说明：
+// - prefix: v1/user
+//   作用：URL 前缀，与上面的配置相同
+//
+// - group: user
+//   作用：handler 分组，与上面的配置相同
+//
+// - jwt: JwtAuth
+//   作用：启用 JWT 认证中间件
+//   说明：JwtAuth 是在配置文件中定义的 JWT 认证配置名称
+//   要求：客户端必须在 HTTP Header 中携带有效的 JWT Token
+//   格式：Authorization: Bearer {token}
+//   验证：Go-Zero 会自动验证 Token 的有效性和过期时间
+
+service user {
+	@doc "获取用户信息"
+	@handler detail
+	get /user (UserInfoReq) returns (UserInfoResp)
+}
+// 接口详细说明：
+
+// 【接口 3：获取用户信息】
+// - @doc "获取用户信息"：接口文档说明
+// - @handler detail：生成的 handler 函数名为 DetailHandler
+// - get /user：HTTP GET 方法，路径为 /user
+// - 完整路径：GET /v1/user/user
+// - 请求参数：UserInfoReq（空结构体，无需传参）
+// - 请求头要求：
+//   Authorization: Bearer eyJhbGc...（必须携带有效的 JWT Token）
+// - 响应数据：UserInfoResp
+//   {
+//     "info": {
+//       "id": "user_123",
+//       "mobile": "13800138000",
+//       "nickname": "张三",
+//       "sex": 1,
+//       "avatar": "http://..."
+//     }
+//   }
+// - 业务场景：用户查看自己的个人信息
+// - 需要认证：必须先登录获取 Token
+// - 用户识别：从 JWT Token 中解析出当前登录用户的 ID
+
+
+// ============================================================================
+// Go-Zero API 路由配置详解
+// ============================================================================
+/*
+1. @server 配置项说明：
+   - prefix：URL 路径前缀，统一管理接口版本和模块
+   - group：handler 代码分组，影响生成的目录结构
+   - jwt：JWT 认证配置名称，启用后自动验证 Token
+   - middleware：中间件列表，可添加多个（用逗号分隔）
+   - timeout：接口超时时间（可选）
+
+2. service 定义规范：
+   - service 后跟服务名称（如 user）
+   - 大括号内定义多个接口
+   - 每个接口包含：@doc、@handler、HTTP 方法、路径、请求/响应类型
+
+3. HTTP 方法支持：
+   - get：查询数据（如获取用户信息）
+   - post：创建数据（如注册、登录）
+   - put：更新数据（如修改用户信息）
+   - delete：删除数据（如注销账号）
+
+4. 路由路径规则：
+   - 实际路径 = prefix + 接口路径
+   - 示例：prefix: v1/user + /register = /v1/user/register
+   - 支持路径参数：/user/:id（动态参数）
+
+5. JWT 认证流程：
+   【无 JWT 配置的接口】
+   客户端 -> 直接访问 -> 服务端处理
+
+   【有 JWT 配置的接口】
+   客户端 -> 携带 Token -> JWT 中间件验证 -> 验证通过 -> 服务端处理
+                                          -> 验证失败 -> 返回 401 错误
+
+6. 代码生成说明：
+   执行命令：goctl api go -api user.api -dir .
+   生成结构：
+   ├── internal/
+   │   ├── handler/
+   │   │   └── user/              # group: user 对应的目录
+   │   │       ├── registerhandler.go    # @handler register
+   │   │       ├── loginhandler.go       # @handler login
+   │   │       └── detailhandler.go      # @handler detail
+   │   ├── logic/
+   │   │   └── user/
+   │   │       ├── registerlogic.go
+   │   │       ├── loginlogic.go
+   │   │       └── detaillogic.go
+   │   └── types/
+   │       └── types.go           # 所有请求/响应类型定义
+
+7. 使用示例：
+
+   【示例 1：用户注册】
+   curl -X POST http://localhost:8888/v1/user/register \
+     -H "Content-Type: application/json" \
+     -d '{
+       "phone": "13800138000",
+       "password": "123456",
+       "nickname": "张三",
+       "sex": 1,
+       "avatar": "http://example.com/avatar.jpg"
+     }'
+
+   【示例 2：用户登录】
+   curl -X POST http://localhost:8888/v1/user/login \
+     -H "Content-Type: application/json" \
+     -d '{
+       "phone": "13800138000",
+       "password": "123456"
+     }'
+
+   【示例 3：获取用户信息（需要 Token）】
+   curl -X GET http://localhost:8888/v1/user/user \
+     -H "Authorization: Bearer eyJhbGc..."
+
+8. 常见错误处理：
+   - 401 Unauthorized：Token 无效或过期
+   - 400 Bad Request：请求参数格式错误
+   - 500 Internal Server Error：服务器内部错误
+
+9. 最佳实践：
+   - 敏感接口（如获取用户信息、修改资料）必须添加 jwt 认证
+   - 公开接口（如注册、登录）不需要 jwt 认证
+   - 使用 prefix 统一管理 API 版本（v1、v2 等）
+   - 使用 group 合理组织代码结构
+   - @doc 注释要清晰明了，便于生成 API 文档
+*/
+
+// ============================================================================
+// 文件结束
+// ============================================================================

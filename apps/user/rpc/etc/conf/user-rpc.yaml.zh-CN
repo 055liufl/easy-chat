@@ -1,0 +1,366 @@
+# ============================================================================
+# User RPC 服务配置文件 - 中文详细注释版本
+# ============================================================================
+# 文件说明：
+#   这是 User RPC 服务的配置文件
+#   User RPC 提供用户管理的核心业务逻辑
+#   包括用户注册、登录验证、信息查询和更新等功能
+#
+# 数据存储：
+#   使用 MySQL 存储用户数据
+#   使用 Redis 缓存用户信息
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# 服务基本配置
+# ----------------------------------------------------------------------------
+
+# name: 服务名称
+name: user.rpc
+
+# listenon: RPC 服务监听地址
+# 格式：IP:端口
+# 端口规划：
+#   - 10000: user RPC
+#   - 10001: social RPC
+#   - 10002: im RPC
+listenon: 0.0.0.0:10000
+
+# ----------------------------------------------------------------------------
+# 服务注册与发现配置
+# ----------------------------------------------------------------------------
+etcd:
+  hosts:
+    - 192.168.117.24:3379
+  key: user.rpc
+
+# ----------------------------------------------------------------------------
+# MySQL 数据库配置
+# ----------------------------------------------------------------------------
+# mysql: MySQL 数据库连接配置
+# 作用：存储用户数据
+# User RPC 使用 MySQL 存储：
+#   - 用户基本信息表
+#   - 用户认证信息表
+#   - 用户设置表
+mysql:
+  # datasource: MySQL 连接字符串
+  # 格式：用户名:密码@tcp(主机:端口)/数据库名?参数
+  # 参数说明：
+  #   - charset=utf8mb4: 字符集（支持 emoji 等特殊字符）
+  # 注意：这里没有 parseTime=true 参数
+  #       如果需要自动解析 time.Time 类型，建议添加此参数
+  datasource: root:easy-chat@tcp(192.168.117.24:13306)/easy-chat?charset=utf8mb4
+
+# ----------------------------------------------------------------------------
+# Redis 缓存配置
+# ----------------------------------------------------------------------------
+# redisx: Redis 缓存配置（自定义配置名称）
+# 作用：缓存用户信息，提高查询性能
+redisx:
+  # host: Redis 服务器地址
+  host: 192.168.117.24:16379
+
+  # type: Redis 类型
+  # 可选值：node（单节点）、cluster（集群）
+  type: node
+
+  # pass: Redis 密码
+  pass: easy-chat
+
+# ----------------------------------------------------------------------------
+# Go-Zero 缓存配置
+# ----------------------------------------------------------------------------
+# cache: Go-Zero 标准缓存配置
+# 作用：Go-Zero 框架的自动缓存功能
+# 与 redisx 的区别：
+#   - cache: Go-Zero 框架使用的标准配置
+#   - redisx: 应用层自定义使用的 Redis 配置
+cache:
+  - host: 192.168.117.24:16379
+    type: node
+    pass: easy-chat
+
+# ----------------------------------------------------------------------------
+# JWT 配置
+# ----------------------------------------------------------------------------
+# jwt: JWT 配置
+# 作用：User RPC 可能需要验证或生成 JWT token
+jwt:
+  # accessexpire: JWT token 过期时间
+  # 单位：秒
+  # 8640000 秒 = 100 天
+  accessexpire: 8640000
+
+  # accesssecret: JWT 签名密钥
+  # 必须与 API 服务保持一致
+  accesssecret: imooc.com
+
+# ============================================================================
+# User RPC 服务功能说明
+# ============================================================================
+# User RPC 提供的主要功能：
+#
+# 1. 用户认证：
+#    - Register: 用户注册
+#    - Login: 用户登录验证
+#    - VerifyToken: 验证 JWT token
+#    - ChangePassword: 修改密码
+#
+# 2. 用户信息管理：
+#    - GetUserInfo: 获取用户信息
+#    - UpdateUserInfo: 更新用户信息
+#    - GetUserList: 批量获取用户信息
+#    - SearchUser: 搜索用户
+#
+# 3. 用户状态管理：
+#    - SetOnlineStatus: 设置在线状态
+#    - GetOnlineStatus: 获取在线状态
+#    - GetOnlineUsers: 获取在线用户列表
+#
+# ============================================================================
+# 数据库表结构设计
+# ============================================================================
+# 1. users 表（用户基本信息表）：
+#    CREATE TABLE users (
+#      id VARCHAR(64) PRIMARY KEY COMMENT '用户ID',
+#      phone VARCHAR(20) UNIQUE NOT NULL COMMENT '手机号',
+#      password VARCHAR(255) NOT NULL COMMENT '密码（加密）',
+#      nickname VARCHAR(100) COMMENT '昵称',
+#      avatar VARCHAR(500) COMMENT '头像URL',
+#      gender TINYINT DEFAULT 0 COMMENT '性别：0未知 1男 2女',
+#      birthday DATE COMMENT '生日',
+#      email VARCHAR(100) COMMENT '邮箱',
+#      signature VARCHAR(500) COMMENT '个性签名',
+#      status TINYINT DEFAULT 1 COMMENT '状态：1正常 2禁用',
+#      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+#      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+#      KEY idx_phone (phone),
+#      KEY idx_nickname (nickname),
+#      KEY idx_status (status)
+#    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
+#
+# 2. user_settings 表（用户设置表）：
+#    CREATE TABLE user_settings (
+#      id BIGINT PRIMARY KEY AUTO_INCREMENT,
+#      user_id VARCHAR(64) NOT NULL COMMENT '用户ID',
+#      setting_key VARCHAR(100) NOT NULL COMMENT '设置键',
+#      setting_value TEXT COMMENT '设置值',
+#      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+#      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+#      UNIQUE KEY uk_user_key (user_id, setting_key),
+#      KEY idx_user_id (user_id)
+#    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户设置表';
+#
+# ============================================================================
+# 密码加密说明
+# ============================================================================
+# 密码加密使用 bcrypt 算法：
+#
+# 1. 注册时加密：
+#    import "golang.org/x/crypto/bcrypt"
+#
+#    // 加密密码
+#    hashedPassword, err := bcrypt.GenerateFromPassword(
+#      []byte(password),
+#      bcrypt.DefaultCost,  // 默认成本因子：10
+#    )
+#
+# 2. 登录时验证：
+#    // 验证密码
+#    err := bcrypt.CompareHashAndPassword(
+#      []byte(hashedPassword),
+#      []byte(password),
+#    )
+#    if err == nil {
+#      // 密码正确
+#    }
+#
+# 3. bcrypt 优势：
+#    - 自动加盐
+#    - 计算成本可调
+#    - 抗彩虹表攻击
+#    - 业界标准
+#
+# ============================================================================
+# Redis 缓存设计
+# ============================================================================
+# 1. 用户信息缓存：
+#    Key: cache:user:info:{user_id}
+#    Type: Hash
+#    Value: 用户信息字段
+#    TTL: 3600 秒（1小时）
+#
+# 2. 手机号到用户ID映射：
+#    Key: cache:user:phone:{phone}
+#    Type: String
+#    Value: user_id
+#    TTL: 86400 秒（24小时）
+#
+# 3. 用户在线状态：
+#    Key: user:online:{user_id}
+#    Type: String
+#    Value: 1（在线）或 0（离线）
+#    TTL: 根据心跳更新
+#
+# 4. 在线用户集合：
+#    Key: user:online:set
+#    Type: Set
+#    Value: 在线用户ID集合
+#    TTL: 无（通过心跳维护）
+#
+# ============================================================================
+# 业务逻辑示例
+# ============================================================================
+# 用户注册流程：
+#
+# 1. 验证参数：
+#    - 检查手机号格式
+#    - 检查密码强度
+#    - 验证短信验证码
+#
+# 2. 检查手机号是否已注册：
+#    SELECT id FROM users WHERE phone = ?;
+#
+# 3. 加密密码：
+#    hashedPassword := bcrypt.GenerateFromPassword(password)
+#
+# 4. 生成用户ID：
+#    user_id := generateUniqueID()  // 如：user_001
+#
+# 5. 插入用户记录：
+#    INSERT INTO users (id, phone, password, nickname)
+#    VALUES (?, ?, ?, ?);
+#
+# 6. 删除验证码缓存：
+#    Redis DEL sms:code:{phone}
+#
+# 7. 返回用户信息
+#
+# 用户登录流程：
+#
+# 1. 根据手机号查询用户：
+#    SELECT id, password, status FROM users WHERE phone = ?;
+#
+# 2. 检查用户状态：
+#    if status != 1 {
+#      return error("账号已被禁用")
+#    }
+#
+# 3. 验证密码：
+#    err := bcrypt.CompareHashAndPassword(hashedPassword, password)
+#    if err != nil {
+#      return error("密码错误")
+#    }
+#
+# 4. 更新登录时间：
+#    UPDATE users SET last_login_at = NOW() WHERE id = ?;
+#
+# 5. 返回用户信息
+#
+# ============================================================================
+# Go-Zero 缓存机制
+# ============================================================================
+# Go-Zero 提供了自动缓存功能：
+#
+# 1. 使用 sqlc 和 sqlx 工具生成代码：
+#    - 自动实现缓存逻辑
+#    - 查询时先查缓存，未命中再查数据库
+#    - 更新/删除时自动删除缓存
+#
+# 2. 缓存 Key 规则：
+#    - 主键查询：cache:user:id:{id}
+#    - 唯一索引查询：cache:user:phone:{phone}
+#
+# 3. 缓存过期时间：
+#    - 默认：随机 7-14 天
+#    - 可自定义
+#
+# 4. 缓存更新策略：
+#    - Cache Aside 模式
+#    - 更新数据库后删除缓存
+#    - 下次查询时重新加载
+#
+# ============================================================================
+# 开发环境使用指南
+# ============================================================================
+# 1. 数据库准备：
+#    # 创建数据库
+#    CREATE DATABASE easy_chat DEFAULT CHARSET utf8mb4;
+#
+#    # 创建用户表
+#    USE easy_chat;
+#    -- 执行上面的建表 SQL
+#
+# 2. 启动服务：
+#    cd /home/lfl/easy-chat1/apps/user/rpc
+#    go run user.go -f etc/conf/user-rpc.yaml
+#
+# 3. 验证服务：
+#    # 检查服务注册
+#    etcdctl get --prefix /user.rpc
+#
+#    # 测试 RPC 调用
+#    grpcurl -plaintext 192.168.117.24:10000 list
+#
+# ============================================================================
+# 性能优化建议
+# ============================================================================
+# 1. 数据库优化：
+#    - 为 phone 字段创建唯一索引
+#    - 为 nickname 创建索引（支持搜索）
+#    - 使用读写分离
+#    - 考虑分库分表（用户量大时）
+#
+# 2. 缓存优化：
+#    - 缓存热点用户信息
+#    - 使用缓存预热
+#    - 实现多级缓存
+#    - 监控缓存命中率
+#
+# 3. 查询优化：
+#    - 避免 SELECT *
+#    - 只查询必要的字段
+#    - 使用批量查询
+#    - 分页查询大量数据
+#
+# 4. 密码验证优化：
+#    - bcrypt 计算成本较高
+#    - 可以先查询用户是否存在
+#    - 避免无效的密码验证
+#
+# ============================================================================
+# 安全性建议
+# ============================================================================
+# 1. 密码安全：
+#    - 使用 bcrypt 加密
+#    - 密码强度验证
+#    - 限制登录失败次数
+#    - 实现账号锁定
+#
+# 2. 数据安全：
+#    - 敏感信息加密存储
+#    - 数据脱敏
+#    - 审计日志
+#    - 定期备份
+#
+# 3. 接口安全：
+#    - 验证调用来源
+#    - 实现限流
+#    - 防止暴力破解
+#
+# ============================================================================
+# 监控和告警
+# ============================================================================
+# 1. 关键指标：
+#    - RPC 请求量和响应时间
+#    - 数据库查询性能
+#    - 缓存命中率
+#    - 错误率
+#
+# 2. 告警设置：
+#    - 服务不可用
+#    - 响应时间过长
+#    - 数据库连接异常
+#    - 缓存异常
+# ============================================================================

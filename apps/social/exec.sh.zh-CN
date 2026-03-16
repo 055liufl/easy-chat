@@ -1,0 +1,139 @@
+#!/bin/bash
+# ============================================================================
+# 脚本名称: exec.sh
+# 脚本用途: Social 服务代码生成脚本
+# 所属模块: apps/social
+# ============================================================================
+
+# 【脚本整体说明】
+# 这是一个用于 Social（社交）模块的代码自动生成脚本。
+# 该脚本使用 goctl 工具（go-zero 框架的代码生成工具）来自动生成以下内容：
+# 1. RPC 服务代码（基于 protobuf 定义）
+# 2. 数据库模型代码（基于 SQL DDL 文件）
+# 3. API 服务代码（基于 API 定义文件）
+#
+# 【使用场景】
+# - 当修改了 social.proto 文件后，需要重新生成 RPC 相关代码
+# - 当修改了 social.sql 数据库表结构后，需要重新生成数据模型
+# - 当修改了 social.api 接口定义后，需要重新生成 API 处理代码
+#
+# 【执行方式】
+# 在项目根目录下执行：
+#   bash apps/social/exec.sh
+# 或者：
+#   cd apps/social && bash exec.sh
+#
+# 【前置要求】
+# 1. 已安装 goctl 工具（go-zero 的代码生成工具）
+# 2. 当前工作目录为项目根目录
+# 3. 相关的 proto、sql、api 文件已经存在
+
+# ============================================================================
+# 命令 1: 生成 RPC 服务代码
+# ============================================================================
+goctl rpc protoc apps/social/rpc/social.proto --go_out=./apps/social/rpc --go-grpc_out=./apps/social/rpc --zrpc_out=./apps/social/rpc
+
+# 【命令详解】
+# goctl rpc protoc: goctl 工具的 RPC 代码生成命令
+#
+# 【参数说明】
+# apps/social/rpc/social.proto
+#   - 输入文件：protobuf 协议定义文件
+#   - 定义了 Social 服务的 RPC 接口、请求和响应消息结构
+#
+# --go_out=./apps/social/rpc
+#   - 指定生成的 Go 语言 protobuf 代码的输出目录
+#   - 生成 .pb.go 文件（包含消息结构体定义）
+#
+# --go-grpc_out=./apps/social/rpc
+#   - 指定生成的 gRPC 服务代码的输出目录
+#   - 生成 _grpc.pb.go 文件（包含 gRPC 客户端和服务端接口）
+#
+# --zrpc_out=./apps/social/rpc
+#   - 指定生成的 go-zero RPC 框架代码的输出目录
+#   - 生成 go-zero 风格的 RPC 服务框架代码（配置文件、服务注册等）
+#
+# 【生成的文件】
+# - social.pb.go: protobuf 消息定义
+# - social_grpc.pb.go: gRPC 服务接口
+# - etc/social.yaml: RPC 服务配置文件
+# - internal/: 服务内部实现代码框架
+# - socialclient/: RPC 客户端调用代码
+
+# ============================================================================
+# 命令 2: 生成数据库模型代码
+# ============================================================================
+goctl model mysql ddl -src="./deploy/sql/social.sql" -dir="./apps/social/socialmodels/" -c
+
+# 【命令详解】
+# goctl model mysql ddl: 从 MySQL DDL 语句生成数据模型代码
+#
+# 【参数说明】
+# -src="./deploy/sql/social.sql"
+#   - 指定 SQL DDL 文件路径
+#   - 该文件包含 CREATE TABLE 等数据库表定义语句
+#   - 例如：用户关系表、好友表、群组表等
+#
+# -dir="./apps/social/socialmodels/"
+#   - 指定生成的模型代码输出目录
+#   - 每个数据库表会生成对应的 Go 结构体和 CRUD 方法
+#
+# -c
+#   - cache 选项：生成带缓存的数据模型
+#   - 自动集成 Redis 缓存，提高数据查询性能
+#   - 生成的代码会包含缓存键定义和缓存操作逻辑
+#
+# 【生成的文件】
+# - socialmodels.go: 模型初始化代码
+# - [表名]model.go: 每个表对应的模型文件
+#   包含：Insert、Update、Delete、FindOne 等 CRUD 方法
+# - vars.go: 缓存键和常量定义
+
+# ============================================================================
+# 命令 3: 生成 API 服务代码
+# ============================================================================
+goctl api go -api apps/social/api/social.api -dir apps/social/api -style gozero
+
+# 【命令详解】
+# goctl api go: 从 API 定义文件生成 HTTP API 服务代码
+#
+# 【参数说明】
+# -api apps/social/api/social.api
+#   - 指定 API 定义文件路径
+#   - 该文件使用 go-zero 的 API 语法定义 HTTP 接口
+#   - 包含：路由、请求参数、响应结构、中间件等
+#
+# -dir apps/social/api
+#   - 指定生成代码的输出目录
+#   - 会在该目录下生成完整的 API 服务框架
+#
+# -style gozero
+#   - 指定代码风格为 gozero 风格
+#   - 影响文件命名、函数命名等代码规范
+#   - 可选值：gozero、go_zero、goZero 等
+#
+# 【生成的文件】
+# - etc/social-api.yaml: API 服务配置文件
+# - internal/handler/: HTTP 请求处理器
+# - internal/logic/: 业务逻辑层
+# - internal/svc/: 服务上下文（依赖注入）
+# - internal/types/: 请求和响应类型定义
+# - social.go: 服务入口文件
+
+# ============================================================================
+# 【注意事项】
+# ============================================================================
+# 1. 执行顺序：三个命令按顺序执行，互不依赖，但建议按此顺序生成
+# 2. 代码覆盖：生成的代码会覆盖已存在的同名文件，请注意备份自定义修改
+# 3. 手动修改：生成后的 logic 层代码需要手动实现业务逻辑
+# 4. 版本兼容：确保 goctl 版本与 go-zero 框架版本兼容
+# 5. 路径问题：必须在项目根目录执行，否则路径会出错
+# 6. 错误处理：如果生成失败，检查 proto/sql/api 文件语法是否正确
+
+# ============================================================================
+# 【执行流程总结】
+# ============================================================================
+# 1. 读取 social.proto → 生成 RPC 服务代码
+# 2. 读取 social.sql → 生成数据库模型代码（带缓存）
+# 3. 读取 social.api → 生成 HTTP API 服务代码
+# 4. 开发者在生成的框架基础上实现具体业务逻辑

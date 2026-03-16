@@ -1,0 +1,439 @@
+# ============================================================================
+# APISIX Dashboard 配置文件 - 中文详细注释版本
+# ============================================================================
+# 文件说明：
+#   这是 Apache APISIX Dashboard 的配置文件
+#   APISIX Dashboard 是 APISIX 的 Web 管理界面
+#   提供可视化的路由、插件、上游等配置管理
+#
+# Dashboard 说明：
+#   - 友好的 Web 界面
+#   - 可视化配置管理
+#   - 支持多用户管理
+#   - 实时配置生效
+#
+# 官方文档：https://apisix.apache.org/docs/dashboard/USER_GUIDE
+# ============================================================================
+
+# Apache License 2.0 许可证声明
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# ============================================================================
+# Dashboard 核心配置
+# ============================================================================
+conf:
+
+  # --------------------------------------------------------------------------
+  # 监听配置
+  # --------------------------------------------------------------------------
+  # listen: Dashboard Web 服务监听配置
+  listen:
+    # host: 监听地址
+    # 作用：指定 Dashboard 绑定的网络接口
+    # 可选值：
+    #   - 0.0.0.0: 监听所有网络接口（推荐）
+    #   - 127.0.0.1: 仅本地访问
+    # 说明：这是 Dashboard Web 界面的访问地址
+    host: 0.0.0.0
+
+    # port: 监听端口
+    # 作用：Dashboard Web 服务的端口
+    # 默认：9000
+    # 访问方式：http://IP:9000
+    port: 9000
+
+  # --------------------------------------------------------------------------
+  # 访问控制配置
+  # --------------------------------------------------------------------------
+  # allow_list: IP 白名单
+  # 作用：限制哪些 IP 可以访问 Dashboard
+  # 格式：CIDR 表示法
+  # 说明：
+  #   - 如果不设置，默认允许所有 IP 访问
+  #   - 0.0.0.0/0: 允许所有 IP（开发环境）
+  # 生产环境建议：
+  #   - 127.0.0.1/32: 仅本地访问
+  #   - 10.0.0.0/8: 仅内网访问
+  #   - 具体 IP/32: 仅特定 IP 访问
+  allow_list:
+    - 0.0.0.0/0
+
+  # --------------------------------------------------------------------------
+  # Etcd 配置
+  # --------------------------------------------------------------------------
+  # etcd: Etcd 连接配置
+  # 作用：Dashboard 通过 Etcd 读取和修改 APISIX 配置
+  # 说明：必须与 APISIX 使用相同的 Etcd 集群
+  etcd:
+    # endpoints: Etcd 服务器地址列表
+    # 格式：http://主机:端口 或 https://主机:端口
+    # 支持配置多个地址实现高可用
+    # 注意：这里使用 Docker 容器名称 "etcd"
+    endpoints:
+      - "http://etcd:2379"
+
+    # etcd basic auth info
+    # Etcd 基本认证信息（可选）
+    # 如果 Etcd 启用了认证，需要配置用户名和密码
+    # username: "root"    # Etcd 用户名（如果未启用认证则忽略）
+    # password: "123456"  # Etcd 密码（如果未启用认证则忽略）
+
+    # mtls: 双向 TLS 认证配置（可选）
+    # 作用：使用 TLS 证书进行安全通信
+    # 适用场景：生产环境、跨网络通信
+    mtls:
+      # key_file: 客户端私钥文件路径
+      # 作用：客户端身份验证
+      key_file: ""
+
+      # cert_file: 客户端证书文件路径
+      # 作用：客户端身份验证
+      cert_file: ""
+
+      # ca_file: CA 证书文件路径
+      # 作用：验证服务器证书
+      ca_file: ""
+
+    # prefix: APISIX 配置在 Etcd 中的前缀
+    # 默认：/apisix
+    # 说明：必须与 APISIX 配置中的 prefix 保持一致
+    # prefix: /apisix
+
+  # --------------------------------------------------------------------------
+  # 日志配置
+  # --------------------------------------------------------------------------
+  # log: 日志配置
+  log:
+    # error_log: 错误日志配置
+    error_log:
+      # level: 日志级别
+      # 可选值（从低到高）：
+      #   - debug: 调试信息（最详细）
+      #   - info: 一般信息
+      #   - warn: 警告信息
+      #   - error: 错误信息
+      #   - panic: 严重错误
+      #   - fatal: 致命错误（最少）
+      # 建议：
+      #   - 开发环境：debug 或 info
+      #   - 生产环境：warn 或 error
+      level: warn
+
+      # file_path: 日志文件路径
+      # 支持：
+      #   - 相对路径：logs/error.log
+      #   - 绝对路径：/tmp/logs/error.log
+      #   - 标准输出：/dev/stdout
+      #   - 标准错误：/dev/stderr
+      # 说明：使用标准输出便于 Docker 日志收集
+      file_path:
+        logs/error.log
+
+    # access_log: 访问日志配置
+    access_log:
+      # file_path: 访问日志文件路径
+      file_path:
+        logs/access.log
+
+      # 日志格式示例：
+      # 2020-12-09T16:38:09.039+0800	INFO	filter/logging.go:46	/apisix/admin/routes/r1
+      # {
+      #   "status": 401,
+      #   "host": "127.0.0.1:9000",
+      #   "query": "asdfsafd=adf&a=a",
+      #   "requestId": "3d50ecb8-758c-46d1-af5b-cd9d1c820156",
+      #   "latency": 0,
+      #   "remoteIP": "127.0.0.1",
+      #   "method": "PUT",
+      #   "errs": []
+      # }
+
+  # --------------------------------------------------------------------------
+  # 安全配置
+  # --------------------------------------------------------------------------
+  # security: 安全相关配置
+  security:
+    # CORS 配置（跨域资源共享）
+    # 如果前端和后端不在同一域名，需要配置 CORS
+    # access_control_allow_origin: "http://httpbin.org"
+    # access_control_allow_credentials: true
+    # access_control_allow_headers: "Authorization"
+    # access_control-allow_methods: "*"
+
+    # x_frame_options: X-Frame-Options 响应头
+    # 作用：防止点击劫持攻击
+    # 可选值：
+    #   - deny: 禁止在 iframe 中显示
+    #   - sameorigin: 仅允许同源 iframe
+    # x_frame_options: "deny"
+
+    # content_security_policy: 内容安全策略
+    # 作用：防止 XSS 攻击、数据注入等
+    # 说明：
+    #   - default-src 'self': 默认只允许同源资源
+    #   - script-src 'self' 'unsafe-eval' 'unsafe-inline': 允许脚本
+    #   - style-src 'self' 'unsafe-inline': 允许样式
+    #   - frame-src *: 允许所有来源的 iframe（用于 Grafana 面板）
+    content_security_policy: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src *"
+
+# ============================================================================
+# 认证配置
+# ============================================================================
+# authentication: 用户认证配置
+# 作用：配置 Dashboard 的登录认证
+authentication:
+
+  # --------------------------------------------------------------------------
+  # JWT 配置
+  # --------------------------------------------------------------------------
+  # secret: JWT 签名密钥
+  # 作用：用于生成和验证 JWT token
+  # 默认值：secret
+  # 重要提示：
+  #   - 生产环境必须修改此值
+  #   - 使用强随机字符串（建议 32 位以上）
+  #   - 如果使用默认值，启动时会自动生成随机字符串替换
+  # 安全建议：
+  #   - 不要使用简单密码
+  #   - 定期轮换密钥
+  #   - 使用环境变量或密钥管理服务
+  secret:
+    secret
+
+  # expire_time: JWT token 过期时间
+  # 单位：秒
+  # 作用：指定登录 token 的有效期
+  # 默认：3600 秒（1 小时）
+  # 说明：
+  #   - 过期后需要重新登录
+  #   - 时间越短越安全，但用户体验越差
+  # 建议：
+  #   - 开发环境：3600-7200 秒（1-2 小时）
+  #   - 生产环境：1800-3600 秒（30 分钟-1 小时）
+  expire_time: 3600
+
+  # --------------------------------------------------------------------------
+  # 用户配置
+  # --------------------------------------------------------------------------
+  # users: 用户列表
+  # 作用：定义可以登录 Dashboard 的用户
+  # 说明：支持配置多个用户
+  users:
+    # 管理员用户
+    - username: admin   # 用户名
+      password: admin   # 密码
+
+    # 普通用户
+    - username: user    # 用户名
+      password: user    # 密码
+
+  # 安全建议：
+  #   - 生产环境必须修改默认用户名和密码
+  #   - 使用强密码（大小写字母、数字、特殊字符）
+  #   - 定期更换密码
+  #   - 删除不需要的用户
+  #   - 考虑集成 LDAP、OAuth2 等企业认证系统
+
+# ============================================================================
+# 插件配置
+# ============================================================================
+# plugins: 插件列表（按字母顺序排序）
+# 作用：定义 Dashboard 中可以使用的 APISIX 插件
+# 说明：
+#   - 列出的插件会在 Dashboard 界面中显示
+#   - 可以通过界面配置这些插件
+#   - 注释掉的插件不会在界面中显示
+plugins:
+  - api-breaker              # API 熔断器
+  - authz-keycloak           # Keycloak 认证
+  - basic-auth               # 基本认证
+  - batch-requests           # 批量请求
+  - consumer-restriction     # 消费者限制
+  - cors                     # 跨域资源共享
+  # - dubbo-proxy            # Dubbo 代理
+  - echo                     # 回显（测试用）
+  # - error-log-logger       # 错误日志记录器
+  # - example-plugin         # 示例插件
+  - fault-injection          # 故障注入（测试用）
+  - grpc-transcode           # gRPC 转码
+  - hmac-auth                # HMAC 认证
+  - http-logger              # HTTP 日志记录器
+  - ip-restriction           # IP 限制
+  - jwt-auth                 # JWT 认证
+  - kafka-logger             # Kafka 日志记录器
+  - key-auth                 # Key 认证
+  - limit-conn               # 连接数限制
+  - limit-count              # 请求次数限制
+  - limit-req                # 请求速率限制
+  # - log-rotate             # 日志轮转
+  # - node-status            # 节点状态
+  - openid-connect           # OpenID Connect 认证
+  - prometheus               # Prometheus 监控
+  - proxy-cache              # 代理缓存
+  - proxy-mirror             # 代理镜像
+  - proxy-rewrite            # 代理重写
+  - redirect                 # 重定向
+  - referer-restriction      # Referer 限制
+  - request-id               # 请求 ID
+  - request-validation       # 请求验证
+  - response-rewrite         # 响应重写
+  - serverless-post-function # Serverless 后置函数
+  - serverless-pre-function  # Serverless 前置函数
+  # - skywalking             # SkyWalking 追踪
+  - sls-logger               # 阿里云 SLS 日志
+  - syslog                   # Syslog 日志
+  - tcp-logger               # TCP 日志记录器
+  - udp-logger               # UDP 日志记录器
+  - uri-blocker              # URI 阻止器
+  - wolf-rbac                # Wolf RBAC 权限控制
+  - zipkin                   # Zipkin 追踪
+  - server-info              # 服务器信息
+  - traffic-split            # 流量分割
+
+# ============================================================================
+# Dashboard 使用指南
+# ============================================================================
+# 1. 访问 Dashboard：
+#    - 浏览器打开：http://192.168.117.24:9000
+#    - 默认用户名：admin
+#    - 默认密码：admin
+#
+# 2. 主要功能：
+#    - 路由管理：创建、编辑、删除路由
+#    - 上游管理：配置后端服务集群
+#    - 服务管理：抽象的服务定义
+#    - 消费者管理：API 使用者管理
+#    - 插件管理：配置各种插件
+#    - SSL 证书管理：上传和管理证书
+#
+# 3. 创建路由示例：
+#    a. 点击"路由"菜单
+#    b. 点击"创建"按钮
+#    c. 填写路由信息：
+#       - 名称：user-api
+#       - 路径：/api/user/*
+#       - HTTP 方法：GET, POST, PUT, DELETE
+#    d. 配置上游：
+#       - 类型：roundrobin（轮询）
+#       - 节点：192.168.117.24:8888
+#    e. 配置插件（可选）：
+#       - 限流：limit-count
+#       - 认证：jwt-auth
+#    f. 点击"提交"
+#
+# 4. 配置插件示例：
+#    a. 在路由编辑页面，点击"插件"标签
+#    b. 选择插件（如 limit-count）
+#    c. 配置插件参数：
+#       - count: 100（请求次数）
+#       - time_window: 60（时间窗口，秒）
+#       - rejected_code: 429（拒绝状态码）
+#    d. 点击"启用"
+#
+# ============================================================================
+# 在 easy-chat 项目中的应用
+# ============================================================================
+# 使用 Dashboard 配置 easy-chat 的路由：
+#
+# 1. User API 路由：
+#    - 名称：user-api
+#    - 路径：/api/user/*
+#    - 上游：192.168.117.24:8888
+#    - 插件：jwt-auth, limit-count
+#
+# 2. Social API 路由：
+#    - 名称：social-api
+#    - 路径：/api/social/*
+#    - 上游：192.168.117.24:8881
+#    - 插件：jwt-auth, limit-count
+#
+# 3. IM API 路由：
+#    - 名称：im-api
+#    - 路径：/api/im/*
+#    - 上游：192.168.117.24:8882
+#    - 插件：jwt-auth, limit-count
+#
+# 4. WebSocket 路由：
+#    - 名称：im-ws
+#    - 路径：/ws
+#    - 上游：192.168.117.24:10090
+#    - 插件：jwt-auth
+#    - 注意：需要启用 WebSocket 支持
+#
+# ============================================================================
+# 安全建议
+# ============================================================================
+# 1. 修改默认密码：
+#    - 生产环境必须修改 admin/admin
+#    - 使用强密码
+#
+# 2. 限制访问 IP：
+#    - 配置 allow_list 仅允许内网访问
+#    - 或使用 VPN 访问
+#
+# 3. 启用 HTTPS：
+#    - 配置 SSL 证书
+#    - 强制使用 HTTPS
+#
+# 4. 修改 JWT 密钥：
+#    - 使用强随机字符串
+#    - 定期轮换
+#
+# 5. 集成企业认证：
+#    - LDAP
+#    - OAuth2
+#    - SAML
+#
+# ============================================================================
+# 监控和日志
+# ============================================================================
+# 1. 访问日志：
+#    - 位置：logs/access.log
+#    - 记录所有 Dashboard 访问
+#
+# 2. 错误日志：
+#    - 位置：logs/error.log
+#    - 记录错误和警告
+#
+# 3. 审计日志：
+#    - Dashboard 会记录所有配置变更
+#    - 便于追踪和审计
+#
+# ============================================================================
+# 故障排查
+# ============================================================================
+# 1. 无法登录：
+#    - 检查用户名密码是否正确
+#    - 检查 JWT 密钥配置
+#    - 查看错误日志
+#
+# 2. 无法连接 Etcd：
+#    - 检查 Etcd 是否运行
+#    - 检查网络连接
+#    - 检查 Etcd 地址配置
+#
+# 3. 配置不生效：
+#    - 检查 APISIX 是否运行
+#    - 检查 Etcd prefix 是否一致
+#    - 查看 APISIX 日志
+#
+# 4. 界面显示异常：
+#    - 清除浏览器缓存
+#    - 检查浏览器控制台错误
+#    - 更新到最新版本
+# ============================================================================
