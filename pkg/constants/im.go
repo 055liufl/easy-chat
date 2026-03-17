@@ -1,26 +1,58 @@
-/**
- * @author: dn-jinmin/dn-jinmin
- * @doc:
- */
-
+// =============================================================================
+// IM Constants - 即时通讯常量定义
+// =============================================================================
+// 定义即时通讯系统中使用的各种常量，包括消息类型、聊天类型、内容类型等。
+//
+// 功能特性:
+//   - 消息类型定义（文本、图片、语音等）
+//   - 聊天类型定义（单聊、群聊）
+//   - 内容类型定义（聊天消息、已读回执）
+//
+// 使用场景:
+//   - 消息发送时指定消息类型
+//   - 消息路由时判断聊天类型
+//   - 消息处理时区分内容类型
+//
+// 设计思路:
+//   - 使用自定义类型而非直接使用 int，提高代码可读性
+//   - 使用 iota 自动递增，便于扩展新类型
+//   - 从 0 或 1 开始，根据业务需求选择
+//
+// 项目中的应用:
+//   - IM 服务：消息发送、接收、路由
+//   - 消息服务：消息存储、查询
+//   - WebSocket 服务：消息推送
+//
+// =============================================================================
 package constants
 
+// MType 消息类型
+// 定义消息的具体类型，如文本、图片、语音等
 type MType int
 
 const (
-	TextMType MType = iota
+	TextMType MType = iota // 文本消息（从 0 开始）
+	// 可扩展其他类型:
+	// ImageMType    // 图片消息
+	// VoiceMType    // 语音消息
+	// VideoMType    // 视频消息
+	// FileMType     // 文件消息
 )
 
+// ChatType 聊天类型
+// 定义聊天的类型，用于区分单聊和群聊
 type ChatType int
 
 const (
-	GroupChatType ChatType = iota + 1
-	SingleChatType
+	GroupChatType  ChatType = iota + 1 // 群聊（从 1 开始）
+	SingleChatType                     // 单聊
 )
 
+// ContentType 内容类型
+// 定义消息内容的类型，用于区分普通消息和控制消息
 type ContentType int
 
 const (
-	ContentChatMsg ContentType = iota
-	ContentMakeRead
+	ContentChatMsg  ContentType = iota // 聊天消息（从 0 开始）
+	ContentMakeRead                    // 已读回执（标记消息已读）
 )
